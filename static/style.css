@@ -18,6 +18,9 @@
   --font-body:'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 *{box-sizing:border-box;}
+/* Guarantee the hidden attribute always wins, even over classes that set
+   their own display (flex/grid), so toggling .hidden in JS always works. */
+[hidden]{ display:none !important; }
 html.large-text{ --font-size-base:19px; }
 
 body{

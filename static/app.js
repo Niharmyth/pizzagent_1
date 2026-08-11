@@ -114,7 +114,6 @@ $('#modalQtyDec').onclick = () => { MODAL_QTY = Math.max(1, MODAL_QTY-1); $('#mo
 $('#modalQtyInc').onclick = () => { MODAL_QTY += 1; $('#modalQty').textContent = MODAL_QTY; updateModalPrice(); };
 $('#modalCloseBtn').onclick = closeModal;
 $('#modalBackdrop').onclick = closeModal;
-document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeModal(); closeStub(); } });
 
 $('#modalAddBtn').onclick = async () => {
   const {size, crust, toppings} = getModalSelection();
@@ -313,9 +312,7 @@ function openStub(key){
   $('#stubBackdrop').hidden = false;
   $('#stubModal').hidden = false;
 }
-function closeStub(){ $('#stubBackdrop').hidden = true; $('#stubModal').hidden = true; }
-$('#stubCloseBtn').onclick = closeStub;
-$('#stubBackdrop').onclick = closeStub;
+function closeStub(){ $('#stubBackdrop').hidden = true; $('#stubModal').hidden = true; setActiveNav('home'); }
 
 function setActiveNav(target){
   $$('.nav-link, .bn-btn').forEach(el => el.classList.toggle('active', el.dataset.nav === target));
@@ -331,6 +328,17 @@ function handleNav(target){
 
 $$('.nav-link, .bn-btn, .cart-icon-btn').forEach(el => {
   el.addEventListener('click', () => handleNav(el.dataset.nav));
+});
+
+// Delegated close handling — belt-and-braces so a popup can ALWAYS be
+// dismissed (click the ×, click the dark backdrop, or press Escape),
+// even if a direct binding is ever missed.
+document.addEventListener('click', (e) => {
+  if(e.target.closest('#modalCloseBtn') || e.target.id === 'modalBackdrop'){ closeModal(); }
+  if(e.target.closest('#stubCloseBtn') || e.target.id === 'stubBackdrop'){ closeStub(); }
+});
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape'){ closeModal(); closeStub(); }
 });
 
 (async function init(){ await loadMenu(); await loadStores(); await refreshCartFromServer(); })();
