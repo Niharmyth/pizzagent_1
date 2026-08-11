@@ -290,8 +290,126 @@ function showConfirmation(order){
     <div class="order-line total"><span>Total</span><span>$${order.total.toFixed(2)}</span></div>
     <p>${order.fulfilment==='pickup' ? `Pickup at <b>${esc(order.store.name)}</b>, ${esc(order.store.address)}.` : `Delivering from <b>${esc(order.store.name)}</b> — approx ${order.distance_km}km away.`}</p>
     <p>Estimated ${order.fulfilment==='pickup'?'ready':'delivery'} time: <b>${order.eta_minutes} minutes</b>.</p>
+    <button class="secondary-btn" id="trackThisOrderBtn">📦 Track this order</button>
   `;
+  localStorage.setItem('hp_last_order', JSON.stringify(order));
+  $('#trackThisOrderBtn').onclick = openTracker;
   CART = []; SUBTOTAL = 0; renderCart();
+}
+
+/* ---------------- DEALS CAROUSEL ---------------- */
+
+let DEALS = [], DEAL_IDX = 0, DEAL_TIMER = null;
+
+async function loadDeals(){
+  try{
+    const r = await api('/api/deals');
+    DEALS = r.deals || [];
+    renderDeals();
+    startDealRotation();
+  }catch(e){ /* deals are non-essential; fail silently */ }
+}
+
+function renderDeals(){
+  if(!DEALS.length) return;
+  $('#dealTrack').innerHTML = DEALS.map((d,i) => `
+    <div class="deal-slide ${i===0?'active':''}" data-i="${i}">
+      <div class="deal-icon">${d.icon}</div>
+      <div class="deal-text">
+        <h3>${esc(d.title)}</h3>
+        <p>${esc(d.desc)}</p>
+        ${d.code ? `<span class="deal-code">CODE: ${esc(d.code)}</span>` : ''}
+      </div>
+    </div>`).join('');
+  $('#dealDots').innerHTML = DEALS.map((_,i) => `<button class="deal-dot ${i===0?'active':''}" data-i="${i}"></button>`).join('');
+  $$('.deal-dot').forEach(b => b.onclick = () => { showDeal(parseInt(b.dataset.i,10)); resetDealRotation(); });
+}
+
+function showDeal(i){
+  DEAL_IDX = (i + DEALS.length) % DEALS.length;
+  $$('.deal-slide').forEach(s => s.classList.toggle('active', parseInt(s.dataset.i,10) === DEAL_IDX));
+  $$('.deal-dot').forEach((d,idx) => d.classList.toggle('active', idx === DEAL_IDX));
+}
+
+function startDealRotation(){
+  DEAL_TIMER = setInterval(() => showDeal(DEAL_IDX+1), 4500);
+}
+function resetDealRotation(){
+  clearInterval(DEAL_TIMER);
+  startDealRotation();
+}
+
+$('#dealPrev').onclick = () => { showDeal(DEAL_IDX-1); resetDealRotation(); };
+$('#dealNext').onclick = () => { showDeal(DEAL_IDX+1); resetDealRotation(); };
+
+/* ---------------- ORDER TRACKER ---------------- */
+
+const TRACKER_STAGES = [
+  {key:'placed', icon:'🧾', pct:0, label:'Order placed'},
+  {key:'prep', icon:'🥗', pct:0.12, label:'Preparing'},
+  {key:'bake', icon:'🔥', pct:0.42, label:'Baking'},
+  {key:'quality', icon:'✅', pct:0.72, label:'Quality check'},
+  {key:'out', icon:'🚗', pct:0.88},   // label depends on fulfilment
+  {key:'done', icon:'🎉', pct:1.0},   // label depends on fulfilment
+];
+let TRACKER_TIMER = null;
+
+function stageLabel(stage, fulfilment){
+  if(stage.key === 'out') return fulfilment === 'pickup' ? 'Ready for pickup' : 'Out for delivery';
+  if(stage.key === 'done') return fulfilment === 'pickup' ? 'Picked up' : 'Delivered';
+  return stage.label;
+}
+
+function computeStage(order){
+  const placedAt = new Date(order.placed_at).getTime();
+  const etaMs = Math.max(1, order.eta_minutes) * 60000;
+  const elapsed = Date.now() - (isNaN(placedAt) ? Date.now() : placedAt);
+  const frac = Math.min(1, Math.max(0, elapsed / etaMs));
+  let idx = 0;
+  TRACKER_STAGES.forEach((s,i) => { if(frac >= s.pct) idx = i; });
+  const remainingMin = Math.max(0, Math.ceil((etaMs - elapsed) / 60000));
+  return {idx, remainingMin};
+}
+
+function renderTracker(order){
+  const {idx, remainingMin} = computeStage(order);
+  const stagesHtml = TRACKER_STAGES.map((s,i) => {
+    const cls = i < idx ? 'done' : (i === idx ? 'current' : '');
+    return `<div class="tracker-stage ${cls}">
+      <div class="tracker-dot">${s.icon}</div>
+      <div class="tracker-stage-label">${esc(stageLabel(s, order.fulfilment))}</div>
+    </div>`;
+  }).join('');
+  const itemsSummary = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+  $('#trackerContent').innerHTML = `
+    <p class="tracker-order-no">Order #${esc(order.order_number)}</p>
+    <p class="tracker-meta">${order.fulfilment==='pickup' ? `Pickup from ${esc(order.store.name)}` : `Delivering from ${esc(order.store.name)}`}</p>
+    <div class="tracker-stages">${stagesHtml}</div>
+    <div class="tracker-eta">${idx >= TRACKER_STAGES.length-1 ? 'Order complete!' : `~${remainingMin} minute${remainingMin===1?'':'s'} remaining`}</div>
+    <div class="tracker-items">${esc(itemsSummary)}</div>
+  `;
+}
+
+function openTracker(){
+  closeStub();
+  const raw = localStorage.getItem('hp_last_order');
+  if(!raw){
+    openStub('track');
+    return;
+  }
+  const order = JSON.parse(raw);
+  renderTracker(order);
+  $('#trackerBackdrop').hidden = false;
+  $('#trackerModal').hidden = false;
+  clearInterval(TRACKER_TIMER);
+  TRACKER_TIMER = setInterval(() => renderTracker(order), 20000);
+}
+
+function closeTracker(){
+  $('#trackerBackdrop').hidden = true;
+  $('#trackerModal').hidden = true;
+  clearInterval(TRACKER_TIMER);
+  setActiveNav('home');
 }
 
 $('#simpleToggle').onclick = () => { document.documentElement.classList.toggle('simple-mode'); $('#simpleToggle').classList.toggle('active'); };
@@ -300,8 +418,7 @@ $('#largeToggle').onclick = () => { document.documentElement.classList.toggle('l
 /* ---------------- NAVIGATION (top nav + bottom nav) ---------------- */
 
 const STUB_CONTENT = {
-  deals: {icon:'🏷️', title:'Deals', body:"Promo banners and daily deals are landing in a future version — check back soon."},
-  track: {icon:'📦', title:'Track Order', body:"Live order tracking (prep → bake → out for delivery) is planned for a future version."},
+  track: {icon:'📦', title:'No order yet', body:"You haven't placed an order on this device. Place one and you'll be able to track it here."},
   account: {icon:'👤', title:'Account', body:"Accounts, saved addresses and order history aren't part of this demo yet."},
 };
 
@@ -323,7 +440,9 @@ function handleNav(target){
   if(target === 'home'){ $('#homeTop').scrollIntoView({behavior:'smooth'}); }
   else if(target === 'menu'){ $('#menuSection').scrollIntoView({behavior:'smooth'}); }
   else if(target === 'cart'){ $('#cartPanel').scrollIntoView({behavior:'smooth'}); bumpCart(); }
-  else if(target === 'deals' || target === 'track' || target === 'account'){ openStub(target); }
+  else if(target === 'deals'){ $('#dealsSection').scrollIntoView({behavior:'smooth'}); }
+  else if(target === 'track'){ openTracker(); }
+  else if(target === 'account'){ openStub('account'); }
 }
 
 $$('.nav-link, .bn-btn, .cart-icon-btn').forEach(el => {
@@ -336,9 +455,10 @@ $$('.nav-link, .bn-btn, .cart-icon-btn').forEach(el => {
 document.addEventListener('click', (e) => {
   if(e.target.closest('#modalCloseBtn') || e.target.id === 'modalBackdrop'){ closeModal(); }
   if(e.target.closest('#stubCloseBtn') || e.target.id === 'stubBackdrop'){ closeStub(); }
+  if(e.target.closest('#trackerCloseBtn') || e.target.id === 'trackerBackdrop'){ closeTracker(); }
 });
 document.addEventListener('keydown', (e) => {
-  if(e.key === 'Escape'){ closeModal(); closeStub(); }
+  if(e.key === 'Escape'){ closeModal(); closeStub(); closeTracker(); }
 });
 
-(async function init(){ await loadMenu(); await loadStores(); await refreshCartFromServer(); })();
+(async function init(){ await loadMenu(); await loadStores(); await loadDeals(); await refreshCartFromServer(); })();

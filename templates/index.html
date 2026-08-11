@@ -47,6 +47,16 @@
 
 <div class="disclaimer">&#9888; Demo app on plain HTTP &mdash; no real payment is taken. Please don't enter real personal address details.</div>
 
+<section class="deals-section" id="dealsSection">
+  <div class="deals-carousel" id="dealsCarousel">
+    <div class="deal-track" id="dealTrack"></div>
+    <button class="deal-nav prev" id="dealPrev" aria-label="Previous deal">&#8249;</button>
+    <button class="deal-nav next" id="dealNext" aria-label="Next deal">&#8250;</button>
+    <div class="deal-dots" id="dealDots"></div>
+  </div>
+  <p class="deals-note">Demo deals shown for illustration &mdash; codes aren't applied at checkout yet.</p>
+</section>
+
 <main class="layout">
   <section class="menu-section" id="menuSection">
     <div class="tabs" id="categoryTabs">
@@ -155,7 +165,14 @@
   </div>
 </div>
 
-<!-- Simple stub panel for Deals / Track Order / Account (not built yet — future versions) -->
+<!-- Order tracker (Track Order) -->
+<div id="trackerBackdrop" class="modal-backdrop" hidden></div>
+<div id="trackerModal" class="tracker-modal" hidden>
+  <button id="trackerCloseBtn" class="modal-close" aria-label="Close">&times;</button>
+  <div id="trackerContent"></div>
+</div>
+
+<!-- Simple stub panel for Account (not built yet — future versions) -->
 <div id="stubBackdrop" class="modal-backdrop" hidden></div>
 <div id="stubModal" class="stub-modal" hidden>
   <button id="stubCloseBtn" class="modal-close" aria-label="Close">&times;</button>

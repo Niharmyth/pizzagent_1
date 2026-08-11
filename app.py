@@ -1,5 +1,5 @@
 """
-Pizzomania - Flask agentic demo.
+Healthy Pizza APP - Flask agentic demo.
 
 Files:
     app.py               - backend logic + API (this file)
@@ -14,21 +14,21 @@ Run:
 Opens at http://0.0.0.0:PORT (see PORT constant below).
 """
 
-import os
 import math
 import random
 import string
+from datetime import datetime, timezone
 from urllib.parse import quote
-
+import os
 import requests
 from flask import Flask, jsonify, render_template, request, session
 
 # ============================================================
 # HAND-EDITABLE CONSTANTS
 # ============================================================
-# GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
+#GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "PASTE_YOUR_GEMINI_API_KEY_HERE")
-AGENT_NAME = "pizzomania"
+AGENT_NAME = "Healthy Pizza APP"
 PORT = 8083
 # ============================================================
 
@@ -174,6 +174,16 @@ DUMMY_ADDRESSES = [
 ]
 
 MAX_DELIVERY_KM = 20.0
+
+# ------------------------------------------------------------
+# DEALS (demo/informational only — not applied to pricing yet)
+# ------------------------------------------------------------
+DEALS = [
+    {"icon": "🎉", "title": "Family Friday", "desc": "15% off any Family pizza, every Friday.", "code": "FAMFRI15"},
+    {"icon": "🚚", "title": "Free delivery over $30", "desc": "Spend $30 or more and delivery is on us.", "code": None},
+    {"icon": "🧒", "title": "Kids Eat Happy", "desc": "A free juice box with every Kids pizza.", "code": "KIDSJUICE"},
+    {"icon": "🥗", "title": "Healthy Choice Bundle", "desc": "Any two Healthy Choice pizzas for $28.", "code": "HEALTHY28"},
+]
 
 
 # ------------------------------------------------------------
@@ -328,6 +338,11 @@ def api_stores():
     return jsonify({"stores": STORES})
 
 
+@app.route("/api/deals")
+def api_deals():
+    return jsonify({"deals": DEALS})
+
+
 @app.route("/api/cart", methods=["GET"])
 def api_cart_get():
     cart = session.get("cart", [])
@@ -480,6 +495,7 @@ def api_order_process():
                 "address": address if fulfilment == "delivery" else None,
                 "distance_km": distance_km,
                 "eta_minutes": eta_minutes,
+                "placed_at": datetime.now(timezone.utc).isoformat(),
             }
             session["cart"] = []  # order placed, clear the cart
 
