@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ agent_name }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="util-bar">
+  <div class="util-brand">🍕 {{ agent_name }}</div>
+  <div class="toolbar">
+    <button id="simpleToggle" class="toggle-btn">Simple mode</button>
+    <button id="largeToggle" class="toggle-btn">A+ Large text</button>
+  </div>
+</div>
+
+<section class="hero" style="background-image:url('{{ hero_image }}')">
+  <div class="hero-overlay">
+    <div class="hero-content">
+      <span class="hero-eyebrow">Vegan-friendly &middot; Family-owned &middot; NSW Hills District</span>
+      <h1>{{ agent_name }}</h1>
+      <p class="hero-tagline">Real ingredients, honest calories, and a pizza everyone at the table can agree on &mdash; from kids' faves to family-size feasts.</p>
+      <div class="hero-actions">
+        <button class="primary-btn hero-cta" id="heroOrderBtn">Order Now &rarr;</button>
+        <a class="hero-secondary" href="#howItWorks">How delivery works</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="disclaimer">&#9888; Demo app on plain HTTP &mdash; no real payment is taken. Please don't enter real personal address details.</div>
+
+<main class="layout">
+  <section class="menu-section" id="menuSection">
+    <div class="tabs" id="categoryTabs">
+      <button data-cat="single" class="tab active">🍕 Single Pizzas</button>
+      <button data-cat="family" class="tab">👨‍👩‍👧‍👦 Family Pizzas</button>
+      <button data-cat="kids" class="tab">🧒 Kids Pizzas</button>
+    </div>
+    <div id="menuGrid" class="menu-grid"></div>
+  </section>
+
+  <aside class="cart-panel" id="cartPanel">
+    <h2>🛒 Your Cart</h2>
+    <div id="cartItems" class="cart-items"><p class="muted">Your cart is empty.</p></div>
+    <div class="cart-total"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
+    <button id="checkoutBtn" class="primary-btn" disabled>Checkout &rarr;</button>
+  </aside>
+</main>
+
+<section id="checkoutSection" class="checkout-section" hidden>
+  <h2 id="howItWorks">Pickup or Delivery?</h2>
+  <div class="fulfil-choice">
+    <button id="pickupBtn" class="choice-btn">🏬 Pickup</button>
+    <button id="deliveryBtn" class="choice-btn">🚗 Delivery</button>
+  </div>
+
+  <div id="pickupPanel" hidden>
+    <h3>Choose a store</h3>
+    <div id="storeList" class="store-list"></div>
+  </div>
+
+  <div id="deliveryPanel" hidden>
+    <h3>Enter your address</h3>
+    <div class="address-row">
+      <input id="addressInput" type="text" placeholder="e.g. 12 Old Northern Rd, Castle Hill NSW">
+      <button id="checkAddressBtn" class="secondary-btn">Check address</button>
+    </div>
+    <div id="addressStatus" class="muted"></div>
+    <div id="addressResults" class="address-results"></div>
+  </div>
+
+  <button id="placeOrderBtn" class="primary-btn" disabled>Place order</button>
+</section>
+
+<section id="orderFlow" class="order-flow" hidden>
+  <h2>Processing your order&hellip;</h2>
+  <div id="progressLines" class="progress-lines"></div>
+
+  <details id="traceDetails" class="trace-details" hidden>
+    <summary>See how we checked this</summary>
+    <div id="traceSteps"></div>
+  </details>
+
+  <div id="geminiMessageBox" class="gemini-box" hidden></div>
+
+  <div id="countdownBox" class="countdown-box" hidden>
+    <p>Preparing, packing and getting your order ready&hellip;</p>
+    <div id="countdownNum" class="countdown-num">10</div>
+  </div>
+
+  <div id="confirmationBox" class="confirmation-box" hidden></div>
+  <div id="unavailableBox" class="unavailable-box" hidden></div>
+</section>
+
+<footer class="site-footer">
+  <p>{{ agent_name }} &mdash; a practice/demo agentic ordering app. Not a real pizza company.</p>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
