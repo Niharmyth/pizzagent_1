@@ -1,5 +1,5 @@
 """
-Healthy Pizza APP - Flask agentic demo.
+Pizzomania - Flask agentic demo.
 
 Files:
     app.py               - backend logic + API (this file)
@@ -19,21 +19,20 @@ import random
 import string
 from datetime import datetime, timezone
 from urllib.parse import quote
-import os
+
 import requests
 from flask import Flask, jsonify, render_template, request, session
 
 # ============================================================
 # HAND-EDITABLE CONSTANTS
 # ============================================================
-#GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "PASTE_YOUR_GEMINI_API_KEY_HERE")
-AGENT_NAME = "Healthy Pizza APP"
+GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
+AGENT_NAME = "Pizzomania"
 PORT = 8083
 # ============================================================
 
 app = Flask(__name__)
-app.secret_key = "healthy-pizza-demo-secret-key-change-me"
+app.secret_key = "pizzomania-demo-secret-key-change-me"
 
 GEMINI_ENABLED = bool(GEMINI_API_KEY) and GEMINI_API_KEY != "PASTE_YOUR_GEMINI_API_KEY_HERE"
 _genai_client = None
@@ -56,7 +55,7 @@ def wiki_img(filename, width=700):
     return f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(filename)}?width={width}"
 
 
-HERO_IMAGE = wiki_img("Pizza slices with various toppings.jpg", width=1600)
+HERO_IMAGE = "/static/images/hero.webp"
 
 # ------------------------------------------------------------
 # MENU DATA
@@ -96,53 +95,65 @@ PIZZAS = [
     {"id": "s1", "category": "single", "name": "Garden Veggie Delight",
      "description": "Roasted capsicum, mushroom, red onion, baby spinach, vegan cheese.",
      "base_price": 14.90, "base_cal": 620, "tags": ["Vegan", "Healthy Choice"],
-     "image": wiki_img("Vegetable pizza Denpasar Bali.JPG")},
+     "image": "/static/images/pizzas/garden.webp",
+     "rating": 4.7, "reviews": 312},
     {"id": "s2", "category": "single", "name": "Margherita Fresca",
      "description": "Fresh tomato, basil, light mozzarella on a classic base.",
      "base_price": 13.90, "base_cal": 580, "tags": ["Vegetarian", "Healthy Choice"],
-     "image": wiki_img("Pizza Margherita (14703152728).jpg")},
+     "image": "/static/images/pizzas/margherita.webp",
+     "rating": 4.8, "reviews": 405},
     {"id": "s3", "category": "single", "name": "Mediterranean Falafel",
      "description": "Falafel, hummus drizzle, olives, spinach, semi-dried tomato.",
      "base_price": 15.50, "base_cal": 640, "tags": ["Vegan"],
-     "image": wiki_img("Mediterranean Pizza from BJ's Restaurant & Brewhouse.jpg")},
+     "image": wiki_img("Mediterranean Pizza from BJ's Restaurant & Brewhouse.jpg"),
+     "rating": 4.6, "reviews": 178},
     {"id": "s4", "category": "single", "name": "Lean BBQ Chicken & Corn",
      "description": "Grilled chicken breast, corn, red onion, light BBQ base.",
      "base_price": 15.90, "base_cal": 650, "tags": ["Healthy Choice"],
-     "image": wiki_img("B.B.Q. Chicken Pizza (26679384893).jpg")},
+     "image": "/static/images/pizzas/bbq.webp",
+     "rating": 4.7, "reviews": 264},
     # ---------------- FAMILY ----------------
     {"id": "f1", "category": "family", "name": "Family Veggie Feast",
      "description": "A generous mix of roast vegetables and vegan cheese. Serves 4-6.",
      "base_price": 24.90, "base_cal": 1800, "tags": ["Vegan", "Healthy Choice"],
-     "image": wiki_img("Vegetable pizza Denpasar Bali.JPG")},
+     "image": "/static/images/pizzas/garden.webp",
+     "rating": 4.8, "reviews": 190},
     {"id": "f2", "category": "family", "name": "Family Margherita",
      "description": "Classic tomato and cheese the whole family can agree on. Serves 4-6.",
      "base_price": 23.90, "base_cal": 1700, "tags": ["Vegetarian"],
-     "image": wiki_img("Margherita Pizza.jpg")},
+     "image": "/static/images/pizzas/margherita.webp",
+     "rating": 4.9, "reviews": 233},
     {"id": "f3", "category": "family", "name": "Family Lean Supreme",
      "description": "Chicken, capsicum, mushroom, olives, light cheese. Serves 4-6.",
      "base_price": 26.90, "base_cal": 1950, "tags": ["Healthy Choice"],
-     "image": wiki_img("Round Table chicken & garlic pizza.JPG")},
+     "image": "/static/images/pizzas/fungi.webp",
+     "rating": 4.6, "reviews": 121},
     {"id": "f4", "category": "family", "name": "Family BBQ Chicken",
      "description": "Grilled chicken, corn, red onion, smoky BBQ base. Serves 4-6.",
      "base_price": 27.90, "base_cal": 2000, "tags": [],
-     "image": wiki_img("BBQ Chicken Pizza Hut.jpg")},
+     "image": "/static/images/pizzas/bbq.webp",
+     "rating": 4.7, "reviews": 208},
     # ---------------- KIDS ----------------
     {"id": "k1", "category": "kids", "name": "Mini Cheese Smiles",
      "description": "Mild cheese and tomato base, cut into smiley slices.",
      "base_price": 9.90, "base_cal": 420, "tags": ["Vegetarian"],
-     "image": wiki_img("Pizza slice.jpg")},
+     "image": wiki_img("Pizza slice.jpg"),
+     "rating": 4.9, "reviews": 356},
     {"id": "k2", "category": "kids", "name": "Veggie Stars",
      "description": "Corn, capsicum and vegan cheese, cut into fun star shapes.",
      "base_price": 10.50, "base_cal": 400, "tags": ["Vegan"],
-     "image": wiki_img("Pizza quasi Margherita.jpg")},
+     "image": "/static/images/pizzas/garden.webp",
+     "rating": 4.5, "reviews": 142},
     {"id": "k3", "category": "kids", "name": "Ham & Pineapple Buddies",
      "description": "A kid-favourite: ham and pineapple, mild cheese.",
      "base_price": 10.90, "base_cal": 450, "tags": [],
-     "image": wiki_img("Ham and pineapple pizza, The Mill Pizza.jpg")},
+     "image": wiki_img("Ham and pineapple pizza, The Mill Pizza.jpg"),
+     "rating": 4.6, "reviews": 289},
     {"id": "k4", "category": "kids", "name": "Mini Margherita Munchkins",
      "description": "Simple tomato and mozzarella, cut into small squares.",
      "base_price": 9.50, "base_cal": 400, "tags": ["Vegetarian"],
-     "image": wiki_img("Margherita's Pizza.jpg")},
+     "image": "/static/images/pizzas/margherita.webp",
+     "rating": 4.8, "reviews": 197},
 ]
 PIZZA_BY_ID = {p["id"]: p for p in PIZZAS}
 
@@ -150,14 +161,18 @@ PIZZA_BY_ID = {p["id"]: p for p in PIZZAS}
 # STORES (hardcoded lat/long — approximate)
 # ------------------------------------------------------------
 STORES = [
-    {"id": "castle_hill", "name": "Healthy Pizza Castle Hill",
-     "address": "12 Old Northern Rd, Castle Hill NSW 2154", "lat": -33.7333, "lon": 150.9821},
-    {"id": "schofields", "name": "Healthy Pizza Schofields",
-     "address": "5 Railway Tce, Schofields NSW 2762", "lat": -33.7167, "lon": 150.8667},
-    {"id": "rouse_hill", "name": "Healthy Pizza Rouse Hill",
-     "address": "8 Guildford Rd, Rouse Hill NSW 2155", "lat": -33.6833, "lon": 150.9167},
-    {"id": "marsden_park", "name": "Healthy Pizza Marsden Park",
-     "address": "3 Garfield Rd, Marsden Park NSW 2765", "lat": -33.7167, "lon": 150.8500},
+    {"id": "castle_hill", "name": "Pizzomania Castle Hill",
+     "address": "12 Old Northern Rd, Castle Hill NSW 2154", "lat": -33.7333, "lon": 150.9821,
+     "rating": 4.8, "reviews": 512},
+    {"id": "schofields", "name": "Pizzomania Schofields",
+     "address": "5 Railway Tce, Schofields NSW 2762", "lat": -33.7167, "lon": 150.8667,
+     "rating": 4.6, "reviews": 298},
+    {"id": "rouse_hill", "name": "Pizzomania Rouse Hill",
+     "address": "8 Guildford Rd, Rouse Hill NSW 2155", "lat": -33.6833, "lon": 150.9167,
+     "rating": 4.7, "reviews": 341},
+    {"id": "marsden_park", "name": "Pizzomania Marsden Park",
+     "address": "3 Garfield Rd, Marsden Park NSW 2765", "lat": -33.7167, "lon": 150.8500,
+     "rating": 4.7, "reviews": 276},
 ]
 
 # Dummy addresses used when live geocoding fails/times out/returns nothing.
@@ -179,10 +194,11 @@ MAX_DELIVERY_KM = 20.0
 # DEALS (demo/informational only — not applied to pricing yet)
 # ------------------------------------------------------------
 DEALS = [
-    {"icon": "🎉", "title": "Family Friday", "desc": "15% off any Family pizza, every Friday.", "code": "FAMFRI15"},
-    {"icon": "🚚", "title": "Free delivery over $30", "desc": "Spend $30 or more and delivery is on us.", "code": None},
-    {"icon": "🧒", "title": "Kids Eat Happy", "desc": "A free juice box with every Kids pizza.", "code": "KIDSJUICE"},
-    {"icon": "🥗", "title": "Healthy Choice Bundle", "desc": "Any two Healthy Choice pizzas for $28.", "code": "HEALTHY28"},
+    {"icon": "🎉", "title": "Family Friday", "desc": "15% off any Family pizza, every Friday.", "code": "FAMFRI15", "image": None},
+    {"icon": "🚚", "title": "Free delivery over $30", "desc": "Spend $30 or more and delivery is on us.", "code": None, "image": None},
+    {"icon": "🧒", "title": "Kids Eat Happy", "desc": "A free juice box with every Kids pizza.", "code": "KIDSJUICE", "image": None},
+    {"icon": "🔥", "title": "Mania Deal", "desc": "2 pizzas. $28. Pick any two pizzas from our Mania range.", "code": "MANIA28",
+     "image": "/static/images/mania-deal.webp"},
 ]
 
 
@@ -210,7 +226,7 @@ def nearest_store(lat, lon):
 def geocode_address(query):
     """Try OpenStreetMap Nominatim (free, no key). Returns (results, used_fallback)."""
     try:
-        headers = {"User-Agent": "HealthyPizzaApp-Demo/1.0 (demo contact: pizza-demo@example.com)"}
+        headers = {"User-Agent": "PizzomaniaApp-Demo/1.0 (demo contact: pizza-demo@example.com)"}
         params = {
             "q": query,
             "format": "json",
@@ -311,7 +327,7 @@ def gemini_delivery_message(cart_summary, fulfilment, store, distance_km, can_fu
 
 
 def make_order_number():
-    return "HP-" + "".join(random.choices(string.digits, k=6))
+    return "PM-" + "".join(random.choices(string.digits, k=6))
 
 
 # ------------------------------------------------------------

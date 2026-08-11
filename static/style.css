@@ -158,8 +158,12 @@ main.layout{ display:grid; grid-template-columns:1fr 340px; gap:24px; padding:32
 }
 .badge.tomato{ color:var(--tomato); border-color:#f4c9c1; background:rgba(255,255,255,.92); }
 .pizza-desc{ margin:0; color:var(--muted); font-size:.9em; flex-grow:1; }
+.pizza-rating{ font-size:.82em; color:var(--muted); font-weight:600; }
+.pizza-rating .stars{ color:var(--gold); }
 .pizza-meta{ display:flex; justify-content:space-between; font-size:.85em; color:var(--muted); font-weight:600; }
 .pizza-meta .price{ color:var(--tomato); font-size:1.05em; }
+.store-rating{ font-size:.8em; color:var(--gold); font-weight:700; }
+.store-rating span{ color:var(--muted); font-weight:600; }
 
 .secondary-btn{
   background:#fff; border:1.5px solid var(--green); color:var(--green-dark); padding:10px 12px;
@@ -388,3 +392,24 @@ html.simple-mode .trace-details{ display:none; }
 .history-items{ font-size:.85em; margin-bottom:10px; }
 .history-foot{ display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:.9em; }
 .reorder-btn{ font-weight:700; padding:7px 12px; font-size:.85em; }
+
+/* ---------- about us ---------- */
+.about-section{ max-width:900px; margin:40px auto; padding:0 24px; text-align:center; }
+.about-section h2{ margin:0 0 12px; }
+.about-lede{ color:var(--muted); max-width:600px; margin:0 auto 28px; line-height:1.6; }
+.about-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:18px; text-align:left; }
+.about-item{ background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow-sm); padding:18px; display:flex; gap:12px; align-items:flex-start; }
+.about-icon{ font-size:1.6em; flex-shrink:0; }
+.about-item p{ margin:0; font-size:.88em; color:var(--muted); line-height:1.5; }
+
+/* ---------- faq ---------- */
+.faq-section{ max-width:700px; margin:0 auto 40px; padding:0 24px; }
+.faq-section h2{ text-align:center; margin:0 0 18px; }
+.faq-list{ display:flex; flex-direction:column; gap:10px; }
+.faq-item{ background:var(--card); border-radius:12px; box-shadow:var(--shadow-sm); padding:6px 18px; }
+.faq-item summary{ cursor:pointer; font-weight:700; padding:12px 0; color:var(--green-dark); }
+.faq-item p{ margin:0 0 14px; color:var(--muted); font-size:.9em; line-height:1.55; }
+
+.footer-links{ margin-top:6px; }
+.footer-links a{ color:var(--green-dark); text-decoration:none; font-weight:600; }
+.footer-links a:hover{ text-decoration:underline; }

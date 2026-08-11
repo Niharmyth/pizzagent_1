@@ -15,11 +15,37 @@ async function api(path, opt={}){
   return r.json();
 }
 
-async function loadMenu(){ MENU = await api('/api/menu'); renderMenu(); }
+let FEATURED_BADGES = {};
+
+async function loadMenu(){ MENU = await api('/api/menu'); FEATURED_BADGES = computeFeaturedBadges(MENU.pizzas); renderMenu(); }
 async function loadStores(){ const d = await api('/api/stores'); STORES = d.stores; }
 async function refreshCartFromServer(){ const r = await api('/api/cart'); CART=r.cart; SUBTOTAL=r.subtotal; renderCart(); }
 
 function badgeClass(tag){ return tag === 'Healthy Choice' ? 'badge tomato' : 'badge'; }
+
+// Compute at most two extra, data-driven badges per menu category (the
+// top-rated pizza gets "Mania Favourite"; the next most-reviewed pizza in
+// that category gets "Popular") so badges stay tasteful rather than
+// appearing on every card.
+function computeFeaturedBadges(pizzas){
+  const byCategory = {};
+  pizzas.forEach(p => { (byCategory[p.category] = byCategory[p.category] || []).push(p); });
+  const featured = {};
+  Object.values(byCategory).forEach(list => {
+    if(!list.length) return;
+    const topRated = [...list].sort((a,b) => (b.rating||0)-(a.rating||0) || (b.reviews||0)-(a.reviews||0))[0];
+    featured[topRated.id] = 'Mania Favourite';
+    const topReviewed = [...list].filter(p => p.id !== topRated.id).sort((a,b) => (b.reviews||0)-(a.reviews||0))[0];
+    if(topReviewed) featured[topReviewed.id] = 'Popular';
+  });
+  return featured;
+}
+
+function featuredBadgeHtml(p){
+  const label = FEATURED_BADGES[p.id];
+  if(!label) return '';
+  return `<span class="badge featured ${label==='Mania Favourite'?'mania':'popular'}">${label}</span>`;
+}
 
 /* ---------------- MENU / CARDS ---------------- */
 
@@ -56,19 +82,25 @@ function clearSearchAndFilters(){
   renderMenu();
 }
 
+function ratingHtml(p){
+  if(!p.rating) return '';
+  return `<div class="pizza-rating"><span class="stars">★</span> ${p.rating.toFixed(1)} <span class="muted">(${p.reviews})</span></div>`;
+}
+
 function renderPizzaCard(p){
   const tagsHtml = p.tags.map(t => `<span class="${badgeClass(t)}">${esc(t)}</span>`).join('');
   return `
   <article class="pizza-card">
     <div class="pizza-photo">
       <span class="photo-fallback">🍕</span>
-      <div class="photo-badges">${tagsHtml}</div>
+      <div class="photo-badges">${featuredBadgeHtml(p)}${tagsHtml}</div>
       <img src="${esc(p.image || '')}" alt="${esc(p.name)}" loading="lazy"
            onload="this.parentElement.classList.add('loaded')"
            onerror="this.remove()">
     </div>
     <div class="pizza-body">
       <div class="pizza-head"><h3>${esc(p.name)}</h3></div>
+      ${ratingHtml(p)}
       <p class="pizza-desc">${esc(p.description)}</p>
       <div class="pizza-meta"><span class="price">From $${p.base_price.toFixed(2)}</span><span class="cal">${p.base_cal} cal</span></div>
       <button class="secondary-btn customize-btn" data-id="${p.id}">Customize &amp; Add</button>
@@ -86,10 +118,10 @@ function openCustomizeModal(pizzaId){
 
   $('#modalImg').src = p.image || '';
   $('#modalImg').alt = p.name;
-  $('#modalBadges').innerHTML = p.tags.map(t => `<span class="${badgeClass(t)}">${esc(t)}</span>`).join('');
+  $('#modalBadges').innerHTML = featuredBadgeHtml(p) + p.tags.map(t => `<span class="${badgeClass(t)}">${esc(t)}</span>`).join('');
   $('#modalTitle').textContent = p.name;
   $('#modalDesc').textContent = p.description;
-  $('#modalCal').textContent = `${p.base_cal} cal (base)`;
+  $('#modalCal').textContent = p.rating ? `${p.base_cal} cal (base) · ★ ${p.rating.toFixed(1)} (${p.reviews} reviews)` : `${p.base_cal} cal (base)`;
   $('#modalQty').textContent = MODAL_QTY;
 
   const sizes = MENU.allowed_sizes[p.category];
@@ -226,7 +258,7 @@ function selectFulfilment(type){
 }
 
 function renderStores(){
-  $('#storeList').innerHTML = STORES.map(s => `<button class="store-btn" data-id="${s.id}"><b>${esc(s.name)}</b><span>${esc(s.address)}</span></button>`).join('');
+  $('#storeList').innerHTML = STORES.map(s => `<button class="store-btn" data-id="${s.id}"><b>${esc(s.name)}</b><span>${esc(s.address)}</span>${s.rating ? `<span class="store-rating">★ ${s.rating.toFixed(1)} <span>(${s.reviews})</span></span>` : ''}</button>`).join('');
   $$('.store-btn').forEach(b => b.onclick = () => {
     $$('.store-btn').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); SELECTED_STORE = b.dataset.id; $('#placeOrderBtn').disabled = false;
@@ -433,7 +465,7 @@ async function loadDeals(){
 function renderDeals(){
   if(!DEALS.length) return;
   $('#dealTrack').innerHTML = DEALS.map((d,i) => `
-    <div class="deal-slide ${i===0?'active':''}" data-i="${i}">
+    <div class="deal-slide ${i===0?'active':''}${d.image?' has-photo':''}" data-i="${i}"${d.image?` style="--deal-photo:url('${d.image}')"`:''}>
       <div class="deal-icon">${d.icon}</div>
       <div class="deal-text">
         <h3>${esc(d.title)}</h3>
@@ -501,9 +533,16 @@ function renderTracker(order){
     </div>`;
   }).join('');
   const itemsSummary = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+  const currentStage = TRACKER_STAGES[idx];
+  const bakingHtml = (currentStage && currentStage.key === 'bake') ? `
+    <div class="tracker-baking">
+      <img src="/static/images/loading/oven.png" alt="Pizza baking in the oven" class="tracker-baking-img">
+      <p class="tracker-baking-text">YOUR PIZZA IS IN THE OVEN 🔥<br><span>~${remainingMin} minute${remainingMin===1?'':'s'} remaining</span></p>
+    </div>` : '';
   $('#trackerContent').innerHTML = `
     <p class="tracker-order-no">Order #${esc(order.order_number)}</p>
     <p class="tracker-meta">${order.fulfilment==='pickup' ? `Pickup from ${esc(order.store.name)}` : `Delivering from ${esc(order.store.name)}`}</p>
+    ${bakingHtml}
     <div class="tracker-stages">${stagesHtml}</div>
     <div class="tracker-eta">${idx >= TRACKER_STAGES.length-1 ? 'Order complete!' : `~${remainingMin} minute${remainingMin===1?'':'s'} remaining`}</div>
     <div class="tracker-items">${esc(itemsSummary)}</div>

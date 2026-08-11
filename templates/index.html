@@ -13,7 +13,9 @@
 
 <header class="site-header">
   <div class="site-header-inner">
-    <div class="brand">🍕 {{ agent_name }}</div>
+    <a href="#homeTop" class="brand" data-nav="home" aria-label="{{ agent_name }} — home">
+      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="{{ agent_name }}" class="brand-logo">
+    </a>
     <nav class="main-nav" id="mainNav">
       <button data-nav="home" class="nav-link active">Home</button>
       <button data-nav="menu" class="nav-link">Menu</button>
@@ -24,23 +26,24 @@
     <div class="header-actions">
       <button id="simpleToggle" class="toggle-btn" title="Simple mode">Simple</button>
       <button id="largeToggle" class="toggle-btn" title="Large text">A+</button>
-      <button id="navCartBtn" class="cart-icon-btn" data-nav="cart">
-        🛒<span id="navCartCount" class="cart-count" hidden>0</span>
+      <button id="navCartBtn" class="cart-icon-btn" data-nav="cart" aria-label="View cart">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <span id="navCartCount" class="cart-count" hidden>0</span>
       </button>
     </div>
   </div>
 </header>
 
-<section class="hero" id="homeTop" style="background-image:url('{{ hero_image }}')">
-  <div class="hero-overlay">
-    <div class="hero-content">
-      <span class="hero-eyebrow">Vegan-friendly &middot; Family-owned &middot; NSW Hills District</span>
-      <h1>{{ agent_name }}</h1>
-      <p class="hero-tagline">Real ingredients, honest calories, and a pizza everyone at the table can agree on &mdash; from kids' faves to family-size feasts.</p>
-      <div class="hero-actions">
-        <button class="primary-btn hero-cta" id="heroOrderBtn">Order Now &rarr;</button>
-        <a class="hero-secondary" href="#howItWorks">How delivery works</a>
-      </div>
+<section class="hero" id="homeTop">
+  <div class="hero-media">
+    <img src="{{ hero_image }}" alt="Pizzomania — real pizza, zero compromises. Fresh ingredients, bold flavours, made for people who take pizza seriously." class="hero-img">
+  </div>
+  <div class="hero-cta-bar">
+    <h1 class="sr-only">{{ agent_name }} &mdash; Real pizza. Zero compromises.</h1>
+    <p class="sr-only">Fresh ingredients. Bold flavours. Made for people who take pizza seriously.</p>
+    <div class="hero-actions">
+      <button class="primary-btn hero-cta" id="heroOrderBtn">Order Now &rarr;</button>
+      <a class="hero-secondary" href="#menuSection">Explore the Menu</a>
     </div>
   </div>
 </section>
@@ -62,17 +65,17 @@
     <div class="menu-toolbar">
       <input id="menuSearch" class="search-input" type="search" placeholder="🔍 Search pizzas by name or ingredient…">
       <div class="filter-chips" id="filterChips">
-        <button class="chip" data-filter="vegan">🌱 Vegan</button>
-        <button class="chip" data-filter="vegetarian">🥕 Vegetarian</button>
-        <button class="chip" data-filter="healthy">💚 Healthy Choice</button>
-        <button class="chip" data-filter="under500">🔥 Under 500 cal</button>
-        <button class="chip" data-filter="under15">💲 Under $15</button>
+        <button class="chip" data-filter="vegan">Vegan</button>
+        <button class="chip" data-filter="vegetarian">Vegetarian</button>
+        <button class="chip" data-filter="healthy">Healthy Choice</button>
+        <button class="chip" data-filter="under500">Under 500 cal</button>
+        <button class="chip" data-filter="under15">Under $15</button>
       </div>
     </div>
     <div class="tabs" id="categoryTabs">
-      <button data-cat="single" class="tab active">🍕 Single Pizzas</button>
-      <button data-cat="family" class="tab">👨‍👩‍👧‍👦 Family Pizzas</button>
-      <button data-cat="kids" class="tab">🧒 Kids Pizzas</button>
+      <button data-cat="single" class="tab active">Single Pizzas</button>
+      <button data-cat="family" class="tab">Family Pizzas</button>
+      <button data-cat="kids" class="tab">Kids Pizzas</button>
     </div>
     <div id="menuGrid" class="menu-grid"></div>
   </section>
@@ -122,7 +125,10 @@
   <div id="geminiMessageBox" class="gemini-box" hidden></div>
 
   <div id="countdownBox" class="countdown-box" hidden>
-    <p>Preparing, packing and getting your order ready&hellip;</p>
+    <div class="loading-stage">
+      <img id="loadingStageImg" class="loading-stage-img" src="" alt="">
+      <p id="loadingStageText" class="loading-stage-text">Preparing your dough&hellip;</p>
+    </div>
     <div id="countdownNum" class="countdown-num">10</div>
   </div>
 
@@ -130,17 +136,70 @@
   <div id="unavailableBox" class="unavailable-box" hidden></div>
 </section>
 
+<section id="aboutSection" class="about-section">
+  <h2>Why {{ agent_name }}?</h2>
+  <p class="about-lede">We started in the NSW Hills District with one simple goal: pizza the whole family can feel good about eating &mdash; vegan and vegetarian options on every menu, honest calorie counts, and no mystery ingredients.</p>
+  <div class="about-grid">
+    <div class="about-item"><span class="about-icon">🌱</span><p>Vegan &amp; vegetarian options on every menu, not just a side note</p></div>
+    <div class="about-item"><span class="about-icon">👨‍👩‍👧‍👦</span><p>Family-owned, not a franchise &mdash; four local kitchens, not four hundred</p></div>
+    <div class="about-item"><span class="about-icon">📍</span><p>Castle Hill, Schofields, Rouse Hill &amp; Marsden Park, all NSW Hills District</p></div>
+    <div class="about-item"><span class="about-icon">🥗</span><p>Calories shown on every pizza before you order, no surprises</p></div>
+  </div>
+</section>
+
+<section id="faqSection" class="faq-section">
+  <h2>Frequently asked questions</h2>
+  <div class="faq-list">
+    <details class="faq-item">
+      <summary>Is {{ agent_name }} actually healthier than regular pizza?</summary>
+      <p>We show calorie counts up front, offer vegan cheese and gluten-free bases, and tag lighter options as "Healthy Choice" so you can compare before you order &mdash; rather than guessing.</p>
+    </details>
+    <details class="faq-item">
+      <summary>What if I'm not home for delivery?</summary>
+      <p>This is a demo app, so there's no live courier contact &mdash; in a real version you'd be able to message your driver or leave delivery instructions here.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Can you cater for allergies?</summary>
+      <p>Not yet in this demo &mdash; allergen filtering isn't built in. For a real order, always check with the store directly before ordering if you have a serious allergy.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Do you deliver outside the Hills District?</summary>
+      <p>Delivery is available within 20km of your nearest of our 4 kitchens. Outside that range, we'll let you know and suggest pickup instead.</p>
+    </details>
+    <details class="faq-item">
+      <summary>How does the loyalty program work?</summary>
+      <p>Every order earns a point in your Account panel &mdash; every 5 points unlocks a free-pizza reward marker. It's demo-only for now and isn't deducted at checkout automatically.</p>
+    </details>
+  </div>
+</section>
+
 <footer class="site-footer">
   <p>{{ agent_name }} &mdash; a practice/demo agentic ordering app. Not a real pizza company.</p>
+  <p class="footer-links"><a href="#aboutSection">About us</a> &middot; <a href="#faqSection">FAQ</a></p>
 </footer>
 
 <!-- Bottom nav (mobile only) -->
 <nav class="bottom-nav" id="bottomNav">
-  <button data-nav="home" class="bn-btn active"><span class="bn-icon">🏠</span><span class="bn-label">Home</span></button>
-  <button data-nav="menu" class="bn-btn"><span class="bn-icon">🍕</span><span class="bn-label">Menu</span></button>
-  <button data-nav="cart" class="bn-btn"><span class="bn-icon">🛒<span id="bottomCartCount" class="cart-count" hidden>0</span></span><span class="bn-label">Cart</span></button>
-  <button data-nav="track" class="bn-btn"><span class="bn-icon">📦</span><span class="bn-label">Orders</span></button>
-  <button data-nav="account" class="bn-btn"><span class="bn-icon">👤</span><span class="bn-label">Account</span></button>
+  <button data-nav="home" class="bn-btn active">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></span>
+    <span class="bn-label">Home</span>
+  </button>
+  <button data-nav="menu" class="bn-btn">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 18H3z"/><circle cx="12" cy="12.5" r="1" fill="currentColor" stroke="none"/><circle cx="9.3" cy="16" r="1" fill="currentColor" stroke="none"/><circle cx="14.7" cy="16" r="1" fill="currentColor" stroke="none"/></svg></span>
+    <span class="bn-label">Menu</span>
+  </button>
+  <button data-nav="cart" class="bn-btn">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg><span id="bottomCartCount" class="cart-count" hidden>0</span></span>
+    <span class="bn-label">Cart</span>
+  </button>
+  <button data-nav="track" class="bn-btn">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span>
+    <span class="bn-label">Orders</span>
+  </button>
+  <button data-nav="account" class="bn-btn">
+    <span class="bn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+    <span class="bn-label">Account</span>
+  </button>
 </nav>
 
 <!-- Full-screen / modal pizza customization builder -->
