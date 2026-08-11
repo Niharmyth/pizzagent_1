@@ -281,6 +281,28 @@ $('#checkAddressBtn').onclick = async () => {
   }catch(e){ $('#addressStatus').textContent = `Could not check address: ${e.message}`; }
 };
 
+// Four-stage branded loading progression shown during the 10s countdown.
+const LOADING_STAGES = [
+  {img:'/static/images/loading/dough.png', text:'Preparing your dough…'},
+  {img:'/static/images/loading/sauce.png', text:'Adding the sauce…'},
+  {img:'/static/images/loading/oven.png', text:'Baking to perfection…'},
+  {img:'/static/images/loading/ready.png', text:'Almost ready!'},
+];
+function setLoadingStage(elapsedSeconds){
+  const idx = Math.min(LOADING_STAGES.length-1, Math.floor(elapsedSeconds / 2.5));
+  const img = $('#loadingStageImg');
+  if(img.dataset.stage == idx) return;
+  img.dataset.stage = idx;
+  const stage = LOADING_STAGES[idx];
+  const wrap = $('.loading-stage');
+  wrap.classList.remove('stage-fade');
+  void wrap.offsetWidth;
+  img.src = stage.img;
+  img.alt = stage.text.replace('…', '');
+  $('#loadingStageText').textContent = stage.text;
+  wrap.classList.add('stage-fade');
+}
+
 $('#placeOrderBtn').onclick = placeOrder;
 
 async function placeOrder(){
@@ -331,8 +353,10 @@ async function placeOrder(){
     $('#countdownBox').hidden = false;
     let n = 10;
     $('#countdownNum').textContent = n;
+    setLoadingStage(0);
     const timer = setInterval(() => {
       n -= 1; $('#countdownNum').textContent = Math.max(n,0);
+      setLoadingStage(10 - n);
       if(n <= 0){ clearInterval(timer); showConfirmation(result.order); }
     }, 1000);
   } else {
@@ -603,8 +627,11 @@ function handleNav(target){
   else if(target === 'account'){ openAccount(); }
 }
 
-$$('.nav-link, .bn-btn, .cart-icon-btn').forEach(el => {
-  el.addEventListener('click', () => handleNav(el.dataset.nav));
+$$('.nav-link, .bn-btn, .cart-icon-btn, .brand[data-nav]').forEach(el => {
+  el.addEventListener('click', (e) => {
+    if(el.tagName === 'A') e.preventDefault();
+    handleNav(el.dataset.nav);
+  });
 });
 
 // Delegated close handling — belt-and-braces so a popup can ALWAYS be
