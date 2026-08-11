@@ -3,6 +3,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 let MENU = null, CART = [], SUBTOTAL = 0, CATEGORY = 'single';
 let FULFILMENT = null, SELECTED_STORE = null, SELECTED_ADDRESS = null, STORES = [];
 let CURRENT_PIZZA_ID = null, MODAL_QTY = 1;
+let SEARCH_QUERY = '', ACTIVE_FILTERS = new Set();
 
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function esc(s=''){ return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
@@ -24,11 +25,35 @@ function badgeClass(tag){ return tag === 'Healthy Choice' ? 'badge tomato' : 'ba
 
 function renderMenu(){
   const grid = $('#menuGrid');
-  const pizzas = MENU.pizzas.filter(p => p.category === CATEGORY);
+  const q = SEARCH_QUERY.trim().toLowerCase();
+  let pizzas = q
+    ? MENU.pizzas.filter(p => (p.name + ' ' + p.description).toLowerCase().includes(q))
+    : MENU.pizzas.filter(p => p.category === CATEGORY);
+
+  if(ACTIVE_FILTERS.has('vegan')) pizzas = pizzas.filter(p => p.tags.includes('Vegan'));
+  if(ACTIVE_FILTERS.has('vegetarian')) pizzas = pizzas.filter(p => p.tags.includes('Vegetarian'));
+  if(ACTIVE_FILTERS.has('healthy')) pizzas = pizzas.filter(p => p.tags.includes('Healthy Choice'));
+  if(ACTIVE_FILTERS.has('under500')) pizzas = pizzas.filter(p => p.base_cal < 500);
+  if(ACTIVE_FILTERS.has('under15')) pizzas = pizzas.filter(p => p.base_price < 15);
+
+  if(!pizzas.length){
+    grid.innerHTML = `<div class="empty-menu"><p>No pizzas match your search or filters.</p><button class="secondary-btn" id="clearFiltersBtn">Clear search &amp; filters</button></div>`;
+    $('#clearFiltersBtn').onclick = clearSearchAndFilters;
+    return;
+  }
+
   grid.innerHTML = pizzas.map(p => renderPizzaCard(p)).join('');
   pizzas.forEach(p => {
     $(`.customize-btn[data-id="${p.id}"]`).onclick = () => openCustomizeModal(p.id);
   });
+}
+
+function clearSearchAndFilters(){
+  SEARCH_QUERY = '';
+  $('#menuSearch').value = '';
+  ACTIVE_FILTERS.clear();
+  $$('.chip').forEach(c => c.classList.remove('active'));
+  renderMenu();
 }
 
 function renderPizzaCard(p){
@@ -169,9 +194,19 @@ async function removeItem(idx){
   }catch(e){ toast(e.message); }
 }
 
+$('#menuSearch').addEventListener('input', () => { SEARCH_QUERY = $('#menuSearch').value; renderMenu(); });
+$$('.chip').forEach(c => c.onclick = () => {
+  c.classList.toggle('active');
+  const f = c.dataset.filter;
+  if(ACTIVE_FILTERS.has(f)) ACTIVE_FILTERS.delete(f); else ACTIVE_FILTERS.add(f);
+  renderMenu();
+});
+
 $$('#categoryTabs .tab').forEach(b => b.onclick = () => {
   $$('#categoryTabs .tab').forEach(x => x.classList.remove('active'));
-  b.classList.add('active'); CATEGORY = b.dataset.cat; renderMenu();
+  b.classList.add('active'); CATEGORY = b.dataset.cat;
+  SEARCH_QUERY = ''; $('#menuSearch').value = '';
+  renderMenu();
 });
 
 $('#heroOrderBtn').onclick = () => $('#menuSection').scrollIntoView({behavior:'smooth'});
@@ -292,9 +327,94 @@ function showConfirmation(order){
     <p>Estimated ${order.fulfilment==='pickup'?'ready':'delivery'} time: <b>${order.eta_minutes} minutes</b>.</p>
     <button class="secondary-btn" id="trackThisOrderBtn">📦 Track this order</button>
   `;
-  localStorage.setItem('hp_last_order', JSON.stringify(order));
+  saveOrderToHistory(order);
+  incrementLoyaltyPoints();
   $('#trackThisOrderBtn').onclick = openTracker;
   CART = []; SUBTOTAL = 0; renderCart();
+}
+
+/* ---------------- ORDER HISTORY / LOYALTY / REORDER ---------------- */
+
+function getOrderHistory(){
+  try{ return JSON.parse(localStorage.getItem('hp_order_history') || '[]'); }
+  catch(e){ return []; }
+}
+
+function saveOrderToHistory(order){
+  const hist = getOrderHistory();
+  hist.unshift(order);
+  localStorage.setItem('hp_order_history', JSON.stringify(hist.slice(0, 10)));
+  localStorage.setItem('hp_last_order', JSON.stringify(order));
+}
+
+function getLoyaltyPoints(){
+  return parseInt(localStorage.getItem('hp_points_total') || '0', 10);
+}
+
+function incrementLoyaltyPoints(){
+  const next = getLoyaltyPoints() + 1;
+  localStorage.setItem('hp_points_total', String(next));
+  return next;
+}
+
+function formatDate(iso){
+  try{ return new Date(iso).toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}); }
+  catch(e){ return ''; }
+}
+
+function renderAccount(){
+  const hist = getOrderHistory();
+  const points = getLoyaltyPoints();
+  const progress = points % 5;
+  const rewards = Math.floor(points / 5);
+  const dots = Array.from({length:5}, (_,i) => `<span class="loyalty-dot ${i < progress ? 'filled' : ''}">🍕</span>`).join('');
+  const historyHtml = hist.length ? hist.map((o,i) => `
+    <div class="history-card">
+      <div class="history-head"><b>Order #${esc(o.order_number)}</b><span class="muted">${esc(formatDate(o.placed_at))}</span></div>
+      <div class="history-items muted">${esc(o.items.map(it => `${it.qty}x ${it.name}`).join(', '))}</div>
+      <div class="history-foot">
+        <span>$${o.total.toFixed(2)} &middot; ${esc(o.fulfilment)}</span>
+        <button class="secondary-btn reorder-btn" data-idx="${i}">🔁 Reorder</button>
+      </div>
+    </div>`).join('') : '<p class="muted">No orders yet — place one to start earning rewards!</p>';
+
+  $('#accountContent').innerHTML = `
+    <h2>👤 Your Account</h2>
+    <div class="loyalty-box">
+      <div class="loyalty-dots">${dots}</div>
+      <p>${progress}/5 orders toward a free pizza${rewards > 0 ? ` &middot; 🎁 ${rewards} reward${rewards>1?'s':''} earned` : ''}</p>
+    </div>
+    <h3>Order history</h3>
+    <div class="history-list">${historyHtml}</div>
+  `;
+  $$('.reorder-btn').forEach(b => b.onclick = () => reorder(hist[parseInt(b.dataset.idx,10)]));
+}
+
+async function reorder(order){
+  if(!order) return;
+  try{
+    for(const item of order.items){
+      await api('/api/cart/add', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({pizza_id:item.pizza_id, size:item.size, crust:item.crust, toppings:item.toppings, qty:item.qty})
+      });
+    }
+    await refreshCartFromServer();
+    toast('Order items added to your cart.');
+    closeAccount();
+    $('#cartPanel').scrollIntoView({behavior:'smooth'});
+  }catch(e){ toast('Could not reorder: ' + e.message); }
+}
+
+function openAccount(){
+  renderAccount();
+  $('#accountBackdrop').hidden = false;
+  $('#accountModal').hidden = false;
+}
+function closeAccount(){
+  $('#accountBackdrop').hidden = true;
+  $('#accountModal').hidden = true;
+  setActiveNav('home');
 }
 
 /* ---------------- DEALS CAROUSEL ---------------- */
@@ -419,7 +539,6 @@ $('#largeToggle').onclick = () => { document.documentElement.classList.toggle('l
 
 const STUB_CONTENT = {
   track: {icon:'📦', title:'No order yet', body:"You haven't placed an order on this device. Place one and you'll be able to track it here."},
-  account: {icon:'👤', title:'Account', body:"Accounts, saved addresses and order history aren't part of this demo yet."},
 };
 
 function openStub(key){
@@ -442,7 +561,7 @@ function handleNav(target){
   else if(target === 'cart'){ $('#cartPanel').scrollIntoView({behavior:'smooth'}); bumpCart(); }
   else if(target === 'deals'){ $('#dealsSection').scrollIntoView({behavior:'smooth'}); }
   else if(target === 'track'){ openTracker(); }
-  else if(target === 'account'){ openStub('account'); }
+  else if(target === 'account'){ openAccount(); }
 }
 
 $$('.nav-link, .bn-btn, .cart-icon-btn').forEach(el => {
@@ -456,9 +575,10 @@ document.addEventListener('click', (e) => {
   if(e.target.closest('#modalCloseBtn') || e.target.id === 'modalBackdrop'){ closeModal(); }
   if(e.target.closest('#stubCloseBtn') || e.target.id === 'stubBackdrop'){ closeStub(); }
   if(e.target.closest('#trackerCloseBtn') || e.target.id === 'trackerBackdrop'){ closeTracker(); }
+  if(e.target.closest('#accountCloseBtn') || e.target.id === 'accountBackdrop'){ closeAccount(); }
 });
 document.addEventListener('keydown', (e) => {
-  if(e.key === 'Escape'){ closeModal(); closeStub(); closeTracker(); }
+  if(e.key === 'Escape'){ closeModal(); closeStub(); closeTracker(); closeAccount(); }
 });
 
 (async function init(){ await loadMenu(); await loadStores(); await loadDeals(); await refreshCartFromServer(); })();

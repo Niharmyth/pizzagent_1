@@ -59,6 +59,16 @@
 
 <main class="layout">
   <section class="menu-section" id="menuSection">
+    <div class="menu-toolbar">
+      <input id="menuSearch" class="search-input" type="search" placeholder="🔍 Search pizzas by name or ingredient…">
+      <div class="filter-chips" id="filterChips">
+        <button class="chip" data-filter="vegan">🌱 Vegan</button>
+        <button class="chip" data-filter="vegetarian">🥕 Vegetarian</button>
+        <button class="chip" data-filter="healthy">💚 Healthy Choice</button>
+        <button class="chip" data-filter="under500">🔥 Under 500 cal</button>
+        <button class="chip" data-filter="under15">💲 Under $15</button>
+      </div>
+    </div>
     <div class="tabs" id="categoryTabs">
       <button data-cat="single" class="tab active">🍕 Single Pizzas</button>
       <button data-cat="family" class="tab">👨‍👩‍👧‍👦 Family Pizzas</button>
@@ -172,7 +182,14 @@
   <div id="trackerContent"></div>
 </div>
 
-<!-- Simple stub panel for Account (not built yet — future versions) -->
+<!-- Account: loyalty progress + order history + reorder -->
+<div id="accountBackdrop" class="modal-backdrop" hidden></div>
+<div id="accountModal" class="account-modal" hidden>
+  <button id="accountCloseBtn" class="modal-close" aria-label="Close">&times;</button>
+  <div id="accountContent"></div>
+</div>
+
+<!-- Simple stub panel (used when Track Order is opened with no past order yet) -->
 <div id="stubBackdrop" class="modal-backdrop" hidden></div>
 <div id="stubModal" class="stub-modal" hidden>
   <button id="stubCloseBtn" class="modal-close" aria-label="Close">&times;</button>
