@@ -17,15 +17,19 @@ Opens at http://0.0.0.0:PORT (see PORT constant below).
 import math
 import os
 import random
+import re
+import secrets
 import string
 from datetime import datetime, timezone
+from urllib.parse import quote
+
 import requests
 from flask import Flask, jsonify, render_template, request, session
 
 # ============================================================
 # HAND-EDITABLE CONSTANTS
 # ============================================================
-GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 AGENT_NAME = "Pizzomania"
 PORT = 8083
 # ============================================================
@@ -45,8 +49,8 @@ if GEMINI_ENABLED:
 
 # ------------------------------------------------------------
 # IMAGES
-# All customer-facing product photography is served locally so the
-# menu remains fast, consistent and independent of third-party image hosts.
+# All customer-facing product photography is served locally for consistent
+# branding and predictable performance.
 # ------------------------------------------------------------
 HERO_IMAGE = "/static/images/hero-pizza.webp"
 
@@ -195,6 +199,9 @@ DEALS = [
 ]
 
 
+# Demo-only server-side order registry. Replace with a database for production.
+ORDERS_BY_NUMBER = {}
+
 # ------------------------------------------------------------
 # HELPERS
 # ------------------------------------------------------------
@@ -324,6 +331,263 @@ def make_order_number():
 
 
 # ------------------------------------------------------------
+# PIZZOMANIA AI — PHASE 1
+# ------------------------------------------------------------
+AGENT_MAX_ROUNDS = 4
+
+
+def _normalise(s):
+    return re.sub(r"[^a-z0-9 ]+", " ", str(s or "").lower()).strip()
+
+
+def search_menu(query="", tags=None, max_price=None, max_cal=None):
+    """Search the authoritative PIZZAS catalog using deterministic filters."""
+    query_n = _normalise(query)
+    tags = [str(t).strip().lower() for t in (tags or []) if str(t).strip()]
+    results = []
+    for p in PIZZAS:
+        hay = _normalise(p["name"] + " " + p["description"] + " " + " ".join(p["tags"]))
+        if query_n and not all(token in hay for token in query_n.split()):
+            continue
+        tag_hay = {t.lower() for t in p["tags"]}
+        if tags and not all(t in tag_hay for t in tags):
+            continue
+        if max_price is not None and p["base_price"] > float(max_price):
+            continue
+        if max_cal is not None and p["base_cal"] > int(max_cal):
+            continue
+        results.append({
+            "id": p["id"], "name": p["name"], "description": p["description"],
+            "base_price": p["base_price"], "base_cal": p["base_cal"],
+            "tags": p["tags"], "image": p["image"], "rating": p.get("rating"), "reviews": p.get("reviews")
+        })
+    results.sort(key=lambda x: (-float(x.get("rating") or 0), x["base_price"]))
+    return {"matches": results[:8], "count": len(results)}
+
+
+def build_pizza(pizza_id, size=None, crust=None, toppings=None, qty=1):
+    """Validate an AI-proposed pizza and return authoritative price/calories."""
+    pizza = PIZZA_BY_ID.get(pizza_id)
+    if not pizza:
+        return {"ok": False, "error": "Unknown pizza."}
+    allowed_sizes = ALLOWED_SIZES[pizza["category"]]
+    size = size if size in allowed_sizes else allowed_sizes[0]
+    crust = crust if crust in [c["name"] for c in CRUSTS] else "Classic"
+    valid_toppings = {t["name"] for t in TOPPINGS}
+    toppings = [t for t in (toppings or []) if t in valid_toppings]
+    try:
+        qty = max(1, min(10, int(qty)))
+    except Exception:
+        qty = 1
+    price, cal, pizza, crust_obj, topping_objs = calc_pizza_price_and_cal(pizza_id, size, crust, toppings)
+    return {
+        "ok": True,
+        "pizza": {
+            "id": pizza["id"], "name": pizza["name"], "description": pizza["description"],
+            "image": pizza["image"], "size": size, "crust": crust_obj["name"],
+            "toppings": [t["name"] for t in topping_objs], "qty": qty,
+            "unit_price": price, "total_price": round(price * qty, 2), "calories": cal,
+            "tags": pizza["tags"], "rating": pizza.get("rating"), "reviews": pizza.get("reviews")
+        }
+    }
+
+
+def check_delivery_range(address):
+    """Geocode an address and check the nearest Pizzomania kitchen."""
+    results, fallback = geocode_address(address)
+    if not results:
+        results = DUMMY_ADDRESSES
+        fallback = True
+    chosen = results[0]
+    store, distance_km = nearest_store(chosen["lat"], chosen["lon"])
+    return {
+        "ok": True, "address": chosen, "fallback": fallback,
+        "store": {"id": store["id"], "name": store["name"], "address": store["address"]},
+        "distance_km": distance_km, "can_deliver": distance_km <= MAX_DELIVERY_KM,
+        "delivery_fee": 0.0 if distance_km <= MAX_DELIVERY_KM else None,
+        "free_delivery_threshold": 30.0,
+    }
+
+
+TRACKER_STAGE_DEFS = [
+    {"key": "placed", "label": "Order placed", "pct": 0.00},
+    {"key": "prep", "label": "Preparing", "pct": 0.12},
+    {"key": "bake", "label": "Baking", "pct": 0.42},
+    {"key": "quality", "label": "Quality check", "pct": 0.72},
+    {"key": "out", "label": "Out for delivery", "pct": 0.88},
+    {"key": "done", "label": "Delivered", "pct": 1.00},
+]
+
+def _ensure_order_owner():
+    """Return a stable per-session owner token for demo order privacy."""
+    owner = session.get("order_owner_id")
+    if not owner:
+        owner = secrets.token_urlsafe(24)
+        session["order_owner_id"] = owner
+    return owner
+
+def _order_status(order):
+    placed = datetime.fromisoformat(order["placed_at"].replace("Z", "+00:00"))
+    elapsed = max(0.0, (datetime.now(timezone.utc) - placed).total_seconds())
+    eta_seconds = max(1, int(order.get("eta_minutes", 15)) * 60)
+    fraction = min(1.0, elapsed / eta_seconds)
+    idx = 0
+    for i, stage in enumerate(TRACKER_STAGE_DEFS):
+        if fraction >= stage["pct"]:
+            idx = i
+    fulfilment = order.get("fulfilment")
+    labels = [x["label"] for x in TRACKER_STAGE_DEFS]
+    labels[4] = "Ready for pickup" if fulfilment == "pickup" else "Out for delivery"
+    labels[5] = "Picked up" if fulfilment == "pickup" else "Delivered"
+    remaining = max(0, math.ceil((eta_seconds - elapsed) / 60))
+    return {
+        "stage_key": TRACKER_STAGE_DEFS[idx]["key"],
+        "stage_index": idx,
+        "status": labels[idx],
+        "remaining_min": remaining,
+        "stages": labels,
+        "fraction": fraction,
+    }
+
+def get_order_for_session(order_number):
+    order = ORDERS_BY_NUMBER.get(str(order_number).upper())
+    if not order:
+        return None, {"ok": False, "found": False, "error": "I couldn't find that order on this demo server."}
+    owner = session.get("order_owner_id")
+    if not owner or order.get("owner_id") != owner:
+        return None, {"ok": False, "found": False, "error": "I can't access that order from this session."}
+    return order, None
+
+def check_order_status(order_number):
+    order, error = get_order_for_session(order_number)
+    if error:
+        return error
+    status = _order_status(order)
+    return {"ok": True, "found": True, "order_number": order["order_number"], "status": status["status"],
+            "stage_key": status["stage_key"], "eta_minutes": status["remaining_min"],
+            "total": order["total"], "store": order["store"]["name"]}
+
+
+def _agent_tools():
+    return {
+        "search_menu": search_menu,
+        "build_pizza": build_pizza,
+        "check_delivery_range": check_delivery_range,
+        "check_order_status": check_order_status,
+    }
+
+
+def _tool_schemas():
+    return [
+        {"name": "search_menu", "description": "Search Pizzomania's authoritative menu. Use for preferences, dietary tags, price or calorie constraints.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}, "max_price": {"type": "number"}, "max_cal": {"type": "integer"}}, "required": []}},
+        {"name": "build_pizza", "description": "Validate a pizza configuration and return the authoritative price and calories. Use only after selecting a real pizza.", "parameters": {"type": "object", "properties": {"pizza_id": {"type": "string"}, "size": {"type": "string"}, "crust": {"type": "string"}, "toppings": {"type": "array", "items": {"type": "string"}}, "qty": {"type": "integer"}}, "required": ["pizza_id"]}},
+        {"name": "check_delivery_range", "description": "Check whether a delivery address is within 20km of the nearest Pizzomania kitchen.", "parameters": {"type": "object", "properties": {"address": {"type": "string"}}, "required": ["address"]}},
+        {"name": "check_order_status", "description": "Look up a Pizzomania demo order by order number.", "parameters": {"type": "object", "properties": {"order_number": {"type": "string"}}, "required": ["order_number"]}},
+    ]
+
+
+def _fallback_agent(message):
+    """Useful no-key demo mode. It never invents a price; all results come from tools."""
+    text = _normalise(message)
+    tools = _agent_tools()
+    trace = []
+    if re.search(r"\bpm[- ]?\d{6}\b", text):
+        order_no = re.search(r"\bpm[- ]?\d{6}\b", text).group(0).upper().replace(" ", "-")
+        result = tools["check_order_status"](order_no)
+        trace.append({"label": "Checking your order", "tool": "check_order_status"})
+        if result.get("found"):
+            return {"reply": f"Your order {order_no} is currently **{result['status']}** at {result['store']}.", "suggestions": [], "trace": trace}
+        return {"reply": result["error"], "suggestions": [], "trace": trace}
+
+    max_price = None
+    m = re.search(r"(?:under|below|less than|up to)\s*\$?\s*(\d+(?:\.\d+)?)", text)
+    if m: max_price = float(m.group(1))
+    max_cal = None
+    m = re.search(r"(?:under|below|less than|up to)\s*(\d+)\s*(?:cal|calories)", text)
+    if m: max_cal = int(m.group(1))
+    tags=[]
+    if "vegan" in text: tags.append("vegan")
+    if "vegetarian" in text: tags.append("vegetarian")
+    query = ""
+    for token in ["spicy", "mushroom", "pepperoni", "chicken", "margherita", "veggie", "bbq", "falafel"]:
+        if token in text: query = token; break
+    result = tools["search_menu"](query=query, tags=tags, max_price=max_price, max_cal=max_cal)
+    trace.append({"label": "Checking the menu", "tool": "search_menu"})
+    matches = result["matches"]
+    if not matches:
+        return {"reply": "I couldn't find a pizza that fits all of those requirements. Try relaxing one constraint and I'll have another look.", "suggestions": [], "trace": trace}
+    picks=[]
+    for m in matches[:3]:
+        built = tools["build_pizza"](m["id"])
+        trace.append({"label": f"Checking {m['name']}", "tool": "build_pizza"})
+        if built.get("ok"): picks.append(built["pizza"])
+    best=picks[0]
+    reason=[]
+    if tags: reason.append("your dietary preference")
+    if max_price is not None: reason.append(f"your ${max_price:.0f} budget")
+    if max_cal is not None: reason.append(f"your {max_cal} calorie limit")
+    why = " and ".join(reason) if reason else "what you described"
+    return {"reply": f"I'd start with **{best['name']}** — it fits {why}. You can customize it before it reaches your cart.", "suggestions": picks, "trace": trace}
+
+
+def _gemini_agent(message, history, context):
+    from google.genai import types
+    declarations=[]
+    for schema in _tool_schemas():
+        declarations.append(types.FunctionDeclaration(name=schema["name"], description=schema["description"], parameters_json_schema=schema["parameters"]))
+    tool=types.Tool(function_declarations=declarations)
+    system = ("You are Pizzomania AI, a concise pizza ordering co-pilot. Help the user build a pizza. "
+              "Use tools for authoritative menu, configuration, delivery and order facts. Never invent products, toppings, prices, calories, delivery eligibility or order status. "
+              "Do not reveal hidden reasoning or chain-of-thought. Return friendly concise answers. "
+              "When a user wants a pizza, use search_menu then build_pizza to validate a concrete suggestion. "
+              "A pizza proposal is only a suggestion until the user approves it.")
+    contents=[]
+    for turn in (history or [])[-8:]:
+        role="model" if turn.get("role") in ("assistant","model") else "user"
+        contents.append(types.Content(role=role, parts=[types.Part.from_text(text=str(turn.get("content", "")))]))
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"Current context: {context or {}}\nUser: {message}")]))
+    trace=[]; suggestions=[]
+    for _ in range(AGENT_MAX_ROUNDS):
+        response=_genai_client.models.generate_content(model="gemini-2.5-flash", contents=contents, config=types.GenerateContentConfig(tools=[tool], temperature=0.4, system_instruction=system))
+        candidate=response.candidates[0]
+        parts=candidate.content.parts
+        calls=[part.function_call for part in parts if getattr(part, "function_call", None)]
+        if not calls:
+            text=(response.text or "").strip()
+            return {"reply": text or "I can help you build a pizza.", "suggestions": suggestions, "trace": trace}
+        contents.append(candidate.content)
+        for call in calls:
+            name=call.name; args=dict(call.args or {})
+            fn=_agent_tools().get(name)
+            if not fn:
+                result={"ok":False,"error":"Unknown tool."}
+            else:
+                try: result=fn(**args)
+                except Exception as exc: result={"ok":False,"error":str(exc)}
+            trace.append({"label": {"search_menu":"Checking the menu","build_pizza":"Validating your pizza","check_delivery_range":"Checking delivery range","check_order_status":"Checking your order"}.get(name, "Checking"), "tool": name})
+            if name=="build_pizza" and result.get("ok"): suggestions.append(result["pizza"])
+            contents.append(types.Content(role="user", parts=[types.Part.from_function_response(name=name, response={"result": result})]))
+    return {"reply":"I got a little stuck while building that. Try describing the pizza again in a simpler way.","suggestions":suggestions,"trace":trace}
+
+
+@app.route("/api/agent/ask", methods=["POST"])
+def api_agent_ask():
+    data=request.get_json(force=True) or {}
+    message=(data.get("message") or "").strip()
+    if not message: return jsonify({"ok":False,"error":"Tell me what you're craving."}),400
+    history=data.get("history") or []
+    context=data.get("context") or {}
+    try:
+        if GEMINI_ENABLED and _genai_client is not None:
+            result=_gemini_agent(message, history, context); mode="gemini"
+        else:
+            result=_fallback_agent(message); mode="deterministic"
+        return jsonify({"ok":True,"mode":mode,**result})
+    except Exception as exc:
+        fallback=_fallback_agent(message)
+        return jsonify({"ok":True,"mode":"deterministic-fallback","warning":str(exc),**fallback})
+
+# ------------------------------------------------------------
 # ROUTES
 # ------------------------------------------------------------
 @app.route("/")
@@ -423,6 +687,18 @@ def api_address_lookup():
     return jsonify({"ok": True, "fallback": False, "results": results})
 
 
+@app.route("/api/order/status", methods=["GET"])
+def api_order_status():
+    order_number = request.args.get("order_number", "").strip().upper()
+    if not order_number:
+        order_number = session.get("last_order_number", "")
+    order, error = get_order_for_session(order_number)
+    if error:
+        return jsonify(error), 404
+    status = _order_status(order)
+    return jsonify({"ok": True, "order": order, "status": status})
+
+
 @app.route("/api/order/process", methods=["POST"])
 def api_order_process():
     data = request.get_json(force=True) or {}
@@ -476,7 +752,7 @@ def api_order_process():
                 ),
             })
 
-        delivery_fee = 0.0 if fulfilment == "pickup" else (0.0 if subtotal >= 30.0 else 4.99 if can_fulfil else 0.0)
+        delivery_fee = 0.0 if fulfilment == "pickup" else (0.0 if subtotal >= 30 else 4.99 if can_fulfil else 0.0)
         total = round(subtotal + delivery_fee, 2)
 
         gemini_message, mode = gemini_delivery_message(cart_summary, fulfilment, store, distance_km, can_fulfil)
@@ -505,7 +781,10 @@ def api_order_process():
                 "distance_km": distance_km,
                 "eta_minutes": eta_minutes,
                 "placed_at": datetime.now(timezone.utc).isoformat(),
+                "owner_id": _ensure_order_owner(),
             }
+            ORDERS_BY_NUMBER[order["order_number"]] = order
+            session["last_order_number"] = order["order_number"]
             session["cart"] = []  # order placed, clear the cart
 
         steps.append({"step": 4, "title": "FINAL ANSWER", "detail": gemini_message})

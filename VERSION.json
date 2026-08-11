@@ -1,0 +1,8 @@
+{
+  "version": "6.0.0",
+  "codename": "Pizzomania Canonical",
+  "baseline": "V5 visual baseline + Phase 1 AI + live agentic flow",
+  "status": "canonical",
+  "source_of_truth": "main",
+  "notes": "Merged from the latest V5 visual baseline and Phase 1 AI/live-flow work. Future work must start from pushed main."
+}

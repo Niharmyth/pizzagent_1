@@ -68,6 +68,72 @@
   <p class="deals-note">Some promo codes are demo-only; free delivery over $30 is applied at checkout.</p>
 </section>
 
+
+<section class="ai-builder-section" id="aiBuilderSection">
+  <div class="ai-builder-card">
+    <div class="ai-builder-copy">
+      <div class="ai-eyebrow">✨ PIZZOMANIA AI</div>
+      <h2>Build My Pizza</h2>
+      <p>Tell us what you're craving. Pizzomania AI will find a pizza that fits your taste, budget and dietary needs.</p>
+      <div class="ai-prompt-chips" id="aiPromptChips">
+        <button data-ai-prompt="Something spicy and cheesy">🌶️ Something spicy</button>
+        <button data-ai-prompt="A vegetarian pizza under $15">🌿 Vegetarian under $15</button>
+        <button data-ai-prompt="Something healthy under 600 calories">🥗 Healthy</button>
+        <button data-ai-prompt="Surprise me with something under $18">🎲 Surprise me</button>
+      </div>
+      <button class="primary-btn ai-open-btn" id="aiOpenBtn">🍕 Build My Pizza with AI <span>→</span></button>
+    </div>
+    <div class="ai-builder-art" aria-hidden="true"><div class="ai-pizza-orb">🍕</div><span>AI</span></div>
+  </div>
+</section>
+
+<section class="ai-flow-section" id="aiFlowSection">
+  <div class="ai-flow-head">
+    <div>
+      <div class="ai-eyebrow">LIVE AGENT VISUALIZATION</div>
+      <h2>See Pizzomania AI in action</h2>
+      <p>Follow the journey from craving → AI decision → validated order → kitchen → delivery. This demo uses the same visual language as the real ordering flow.</p>
+    </div>
+    <button id="playAiFlowBtn" class="secondary-btn">▶ Play live demo</button>
+  </div>
+  <div class="ai-flow-stage" aria-live="polite">
+    <div class="ai-flow-status"><span class="live-dot"></span><strong id="aiFlowStatus">Ready for a customer</strong><span id="aiFlowDetail">Press play to watch the agentic ordering sequence.</span></div>
+    <div class="ai-flow-canvas" id="aiFlowCanvas">
+      <div class="flow-line flow-line-1"></div><div class="flow-line flow-line-2"></div><div class="flow-line flow-line-3"></div><div class="flow-line flow-line-4"></div><div class="flow-line flow-line-5"></div>
+      <div class="flow-packet" id="flowPacket" aria-hidden="true">✦</div>
+      <article class="flow-node active" data-flow-node="customer"><div class="flow-icon">👤</div><div><b>Customer</b><span>Selects a pizza or tells AI what they want</span></div><em>01</em></article>
+      <article class="flow-node" data-flow-node="agent"><div class="flow-icon">🍕</div><div><b>Pizza AI</b><span>Understands intent and builds a proposal</span></div><em>02</em></article>
+      <article class="flow-node" data-flow-node="tools"><div class="flow-icon">🧠</div><div><b>Tools + Validation</b><span>Menu, toppings, price and calories checked</span></div><em>03</em></article>
+      <article class="flow-node" data-flow-node="order"><div class="flow-icon">🛒</div><div><b>Order Agent</b><span>Approved pizza enters the real cart/order flow</span></div><em>04</em></article>
+      <article class="flow-node" data-flow-node="kitchen"><div class="flow-icon">🔥</div><div><b>Kitchen</b><span>Dough → sauce → toppings → oven</span></div><em>05</em></article>
+      <article class="flow-node" data-flow-node="ready"><div class="flow-icon">📦</div><div><b>Ready / Delivery</b><span>Order status and ETA become visible</span></div><em>06</em></article>
+    </div>
+    <div class="ai-flow-event" id="aiFlowEvent"><span>LIVE EVENT</span><b>Waiting for a customer to start an order.</b></div>
+    <div class="ai-flow-history" id="aiFlowHistory" aria-live="polite" aria-label="Agent event history"></div>
+  </div>
+</section>
+
+<div id="aiBackdrop" class="modal-backdrop" hidden></div>
+<div id="aiModal" class="ai-modal" hidden role="dialog" aria-modal="true" aria-labelledby="aiModalTitle">
+  <div class="ai-modal-head">
+    <div class="ai-agent-avatar">🍕</div>
+    <div><div class="ai-eyebrow">PIZZOMANIA AI</div><h2 id="aiModalTitle">Let's build your pizza</h2><p>Your pizza co-pilot — you approve, our backend validates.</p></div>
+    <button id="aiCloseBtn" class="modal-close" aria-label="Close">&times;</button>
+  </div>
+  <div class="ai-chat" id="aiChat" aria-live="polite"></div>
+  <div id="aiActivity" class="ai-activity" hidden></div>
+  <div class="ai-composer">
+    <div class="ai-suggestions" id="aiSuggestions">
+      <button data-ai-prompt="Something spicy">🌶️ Spicy</button>
+      <button data-ai-prompt="Something vegetarian">🌿 Vegetarian</button>
+      <button data-ai-prompt="Under $15">💰 Under $15</button>
+      <button data-ai-prompt="Surprise me">🎲 Surprise me</button>
+    </div>
+    <div class="ai-input-row"><input id="aiInput" type="text" autocomplete="off" placeholder="e.g. spicy, cheesy, under $18..." aria-label="Tell Pizzomania AI what you want"><button id="aiSendBtn" class="primary-btn">Send</button></div>
+    <div class="ai-disclaimer">AI suggests. Pizzomania validates the final pizza, price and calories before it reaches your cart.</div>
+  </div>
+</div>
+
 <main class="layout">
   <section class="menu-section" id="menuSection">
     <div class="menu-toolbar">
@@ -263,6 +329,7 @@
   <div id="stubContent" class="stub-content"></div>
 </div>
 
+<button id="aiFloatingBtn" class="ai-floating" aria-label="Open Pizzomania AI">🍕 <span>Build My Pizza</span></button>
 <div id="toast" class="toast"></div>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>

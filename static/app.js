@@ -9,6 +9,100 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('sh
 function esc(s=''){ return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
+/* ---------------- AGENTIC LIVE FLOW ---------------- */
+const AI_FLOW_STAGES = ['customer','agent','tools','order','kitchen','ready'];
+const AI_FLOW_COPY = {
+  customer: ['Customer', 'Pizza selected', 'You choose a pizza or describe what you want to Pizzomania AI.'],
+  agent: ['Pizza AI', 'Understanding your craving', 'The agent interprets taste, budget and dietary preferences.'],
+  tools: ['Agent Tools', 'Validating the pizza', 'Menu availability, toppings, size, crust and server-side price are checked.'],
+  order: ['Order Agent', 'Pizza approved', 'Your approved configuration enters the real cart and checkout flow.'],
+  kitchen: ['Kitchen', 'Pizza is being prepared', 'The preparation sequence moves from dough to sauce to toppings to oven.'],
+  ready: ['Delivery', 'Order ready', 'Your order status and pickup/delivery ETA are now available.']
+};
+let AI_FLOW_INDEX = 0;
+let AI_FLOW_TIMER = null;
+let AI_FLOW_HISTORY = [];
+
+function flowPacketTo(stage){
+  const packet = $('#flowPacket');
+  if(!packet) return;
+  const idx = AI_FLOW_STAGES.indexOf(stage);
+  const pct = 6 + (idx / (AI_FLOW_STAGES.length - 1)) * 88;
+  packet.classList.remove('running');
+  packet.style.left = `${pct}%`;
+  packet.style.top = '58px';
+  void packet.offsetWidth;
+  packet.classList.add('pulse');
+  setTimeout(()=>packet.classList.remove('pulse'),700);
+}
+
+function pushFlowHistory(stage, detail){
+  const copy = AI_FLOW_COPY[stage];
+  AI_FLOW_HISTORY.unshift({stage, label:copy[0], detail:detail || copy[1], time:new Date()});
+  AI_FLOW_HISTORY = AI_FLOW_HISTORY.slice(0,4);
+  const log = $('#aiFlowHistory');
+  if(!log) return;
+  log.innerHTML = AI_FLOW_HISTORY.map((item,i)=>`<span class="flow-history-item ${i===0?'latest':''}"><i>${i===0?'●':'✓'}</i><b>${esc(item.label)}</b><em>${esc(item.detail)}</em></span>`).join('');
+}
+
+function setAgentFlow(stage, detail=null){
+  const idx = AI_FLOW_STAGES.indexOf(stage);
+  if(idx < 0) return;
+  AI_FLOW_INDEX = idx;
+  $$('.flow-node').forEach(node => {
+    const n = AI_FLOW_STAGES.indexOf(node.dataset.flowNode);
+    node.classList.toggle('active', n === idx);
+    node.classList.toggle('done', n < idx);
+  });
+  const copy = AI_FLOW_COPY[stage];
+  $('#aiFlowStatus').textContent = copy[0];
+  $('#aiFlowDetail').textContent = detail || copy[1];
+  $('#aiFlowEvent').innerHTML = `<span>LIVE EVENT</span><b>${esc(detail || copy[1])}</b>`;
+  flowPacketTo(stage);
+  pushFlowHistory(stage, detail);
+}
+
+function startAgentFlowDemo(){
+  clearInterval(AI_FLOW_TIMER);
+  AI_FLOW_HISTORY = [];
+  const packet = $('#flowPacket');
+  if(packet){ packet.classList.remove('running'); packet.style.left='6%'; }
+  let i = 0;
+  setAgentFlow(AI_FLOW_STAGES[0], 'Customer selects a pizza or tells Pizzomania AI what they want.');
+  $('#playAiFlowBtn').disabled = true;
+  $('#playAiFlowBtn').textContent = '● Demo running';
+  AI_FLOW_TIMER = setInterval(() => {
+    i += 1;
+    if(i >= AI_FLOW_STAGES.length){
+      clearInterval(AI_FLOW_TIMER);
+      setAgentFlow('ready', 'Pizza journey complete — ready for pickup or delivery.');
+      $('#playAiFlowBtn').disabled = false;
+      $('#playAiFlowBtn').textContent = '↻ Play again';
+      return;
+    }
+    const demoCopy = {
+      agent:'AI understood the craving and is building a pizza proposal.',
+      tools:'Checking menu availability, toppings and authoritative price.',
+      order:'Customer approved the pizza — sending it into the real cart flow.',
+      kitchen:'Order confirmed — the Pizzomania kitchen is preparing it.',
+      ready:'Pizza is ready — order status and ETA are now available.'
+    };
+    setAgentFlow(AI_FLOW_STAGES[i], demoCopy[AI_FLOW_STAGES[i]]);
+  }, 1500);
+}
+
+function resetAgentFlow(){
+  clearInterval(AI_FLOW_TIMER);
+  AI_FLOW_HISTORY = [];
+  const packet = $('#flowPacket');
+  if(packet){ packet.classList.remove('running','pulse'); packet.style.left='6%'; }
+  setAgentFlow('customer', 'Waiting for a customer to start an order.');
+  $('#playAiFlowBtn').disabled = false;
+  $('#playAiFlowBtn').textContent = '▶ Play live demo';
+}
+
+$('#playAiFlowBtn')?.addEventListener('click', startAgentFlowDemo);
+
 async function api(path, opt={}){
   const r = await fetch(path, opt);
   if(!r.ok){ let m='Request failed'; try{ m=(await r.json()).error||m; }catch(e){} throw new Error(m); }
@@ -70,7 +164,7 @@ function renderMenu(){
 
   grid.innerHTML = pizzas.map(p => renderPizzaCard(p)).join('');
   pizzas.forEach(p => {
-    $(`.customize-btn[data-id="${p.id}"]`).onclick = () => openCustomizeModal(p.id);
+    $(`.customize-btn[data-id="${p.id}"]`).onclick = () => { setAgentFlow('customer', `Customer selected ${p.name} and opened customization.`); openCustomizeModal(p.id); };
   });
 }
 
@@ -294,6 +388,8 @@ function setLoadingStage(elapsedSeconds){
   if(img.dataset.stage == idx) return;
   img.dataset.stage = idx;
   const stage = LOADING_STAGES[idx];
+  if(idx < 3) setAgentFlow('kitchen', stage.text);
+  else setAgentFlow('ready', 'Pizza is ready — your order status is now available.');
   const wrap = $('.loading-stage');
   wrap.classList.remove('stage-fade');
   void wrap.offsetWidth;
@@ -306,6 +402,7 @@ function setLoadingStage(elapsedSeconds){
 $('#placeOrderBtn').onclick = placeOrder;
 
 async function placeOrder(){
+  setAgentFlow('order', 'Customer approved the pizza — sending it through checkout.');
   $('#orderFlow').hidden = false;
   $('#orderFlow').scrollIntoView({behavior:'smooth'});
   $('#progressLines').innerHTML = '';
@@ -328,6 +425,8 @@ async function placeOrder(){
     return;
   }
 
+  setAgentFlow('tools', 'Backend validated the order, fulfilment and kitchen route.');
+
   const friendly = {
     1: 'Checking your order…',
     2: FULFILMENT === 'pickup' ? 'Confirming your pickup store…' : 'Finding your nearest kitchen…',
@@ -344,6 +443,9 @@ async function placeOrder(){
   }
 
   $('#traceSteps').innerHTML = result.steps.map(s => `<div class="trace-step"><b>STEP ${s.step} - ${esc(s.title)}</b><p>${esc(s.detail)}</p></div>`).join('');
+  if(result.can_fulfil){
+    setAgentFlow('kitchen', 'Order confirmed. The kitchen is now preparing your pizza.');
+  }
   $('#traceDetails').hidden = false;
 
   $('#geminiMessageBox').hidden = false;
@@ -521,76 +623,75 @@ $('#dealNext').onclick = () => { showDeal(DEAL_IDX+1); resetDealRotation(); };
 /* ---------------- ORDER TRACKER ---------------- */
 
 const TRACKER_STAGES = [
-  {key:'placed', icon:'🧾', pct:0, label:'Order placed'},
-  {key:'prep', icon:'🥗', pct:0.12, label:'Preparing'},
-  {key:'bake', icon:'🔥', pct:0.42, label:'Baking'},
-  {key:'quality', icon:'✅', pct:0.72, label:'Quality check'},
-  {key:'out', icon:'🚗', pct:0.88},   // label depends on fulfilment
-  {key:'done', icon:'🎉', pct:1.0},   // label depends on fulfilment
+  {key:'placed', icon:'🧾'},
+  {key:'prep', icon:'🥗'},
+  {key:'bake', icon:'🔥'},
+  {key:'quality', icon:'✅'},
+  {key:'out', icon:'🚗'},
+  {key:'done', icon:'🎉'},
 ];
 let TRACKER_TIMER = null;
 
-function stageLabel(stage, fulfilment){
-  if(stage.key === 'out') return fulfilment === 'pickup' ? 'Ready for pickup' : 'Out for delivery';
-  if(stage.key === 'done') return fulfilment === 'pickup' ? 'Picked up' : 'Delivered';
-  return stage.label;
+function syncFlowToOrderStatus(status){
+  if(!status) return;
+  const map={placed:'customer',prep:'kitchen',bake:'kitchen',quality:'tools',out:'ready',done:'ready'};
+  const stage=map[status.stage_key];
+  if(stage) setAgentFlow(stage, `Order status: ${status.status}.`);
 }
 
-function computeStage(order){
-  const placedAt = new Date(order.placed_at).getTime();
-  const etaMs = Math.max(1, order.eta_minutes) * 60000;
-  const elapsed = Date.now() - (isNaN(placedAt) ? Date.now() : placedAt);
-  const frac = Math.min(1, Math.max(0, elapsed / etaMs));
-  let idx = 0;
-  TRACKER_STAGES.forEach((s,i) => { if(frac >= s.pct) idx = i; });
-  const remainingMin = Math.max(0, Math.ceil((etaMs - elapsed) / 60000));
-  return {idx, remainingMin};
-}
-
-function renderTracker(order){
-  const {idx, remainingMin} = computeStage(order);
-  const stagesHtml = TRACKER_STAGES.map((s,i) => {
-    const cls = i < idx ? 'done' : (i === idx ? 'current' : '');
-    return `<div class="tracker-stage ${cls}">
-      <div class="tracker-dot">${s.icon}</div>
-      <div class="tracker-stage-label">${esc(stageLabel(s, order.fulfilment))}</div>
-    </div>`;
+function renderTracker(order, status){
+  if(!status){
+    $('#trackerContent').innerHTML='<p class="muted">I can’t retrieve the live order status right now. Please try again.</p>';
+    return;
+  }
+  const idx=status.stage_index;
+  const remainingMin=status.remaining_min;
+  const stagesHtml=TRACKER_STAGES.map((st,i)=>{
+    const cls=i<idx?'done':(i===idx?'current':'');
+    const label=status.stages?.[i] || st.key;
+    return `<div class="tracker-stage ${cls}"><div class="tracker-dot">${st.icon}</div><div class="tracker-stage-label">${esc(label)}</div></div>`;
   }).join('');
-  const itemsSummary = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
-  const currentStage = TRACKER_STAGES[idx];
-  const bakingHtml = (currentStage && currentStage.key === 'bake') ? `
+  const itemsSummary=order.items.map(i=>`${i.qty}x ${i.name}`).join(', ');
+  const bakingHtml=status.stage_key==='bake'?`
     <div class="tracker-baking">
       <img src="/static/images/loading/oven.png" alt="Pizza baking in the oven" class="tracker-baking-img">
       <p class="tracker-baking-text">YOUR PIZZA IS IN THE OVEN 🔥<br><span>~${remainingMin} minute${remainingMin===1?'':'s'} remaining</span></p>
-    </div>` : '';
-  $('#trackerContent').innerHTML = `
+    </div>`:'';
+  $('#trackerContent').innerHTML=`
     <p class="tracker-order-no">Order #${esc(order.order_number)}</p>
-    <p class="tracker-meta">${order.fulfilment==='pickup' ? `Pickup from ${esc(order.store.name)}` : `Delivering from ${esc(order.store.name)}`}</p>
+    <p class="tracker-meta">${order.fulfilment==='pickup'?`Pickup from ${esc(order.store.name)}`:`Delivering from ${esc(order.store.name)}`}</p>
     ${bakingHtml}
     <div class="tracker-stages">${stagesHtml}</div>
-    <div class="tracker-eta">${idx >= TRACKER_STAGES.length-1 ? 'Order complete!' : `~${remainingMin} minute${remainingMin===1?'':'s'} remaining`}</div>
-    <div class="tracker-items">${esc(itemsSummary)}</div>
-  `;
+    <div class="tracker-eta">${idx>=TRACKER_STAGES.length-1?'Order complete!':`~${remainingMin} minute${remainingMin===1?'':'s'} remaining`}</div>
+    <div class="tracker-items">${esc(itemsSummary)}</div>`;
+  syncFlowToOrderStatus(status);
+}
+
+async function refreshTracker(order){
+  try{
+    const r=await api(`/api/order/status?order_number=${encodeURIComponent(order.order_number)}`);
+    renderTracker(r.order,r.status);
+  }catch(e){
+    renderTracker(order,null);
+  }
 }
 
 function openTracker(){
   closeStub();
-  const raw = localStorage.getItem('hp_last_order');
-  if(!raw){
-    openStub('track');
-    return;
-  }
-  const order = JSON.parse(raw);
-  renderTracker(order);
-  $('#trackerBackdrop').hidden = false;
-  $('#trackerModal').hidden = false;
+  const raw=localStorage.getItem('hp_last_order');
+  if(!raw){ openStub('track'); return; }
+  let order;
+  try{ order=JSON.parse(raw); }catch(e){ openStub('track'); return; }
+  $('#trackerBackdrop').hidden=false;
+  $('#trackerModal').hidden=false;
+  refreshTracker(order);
   clearInterval(TRACKER_TIMER);
-  TRACKER_TIMER = setInterval(() => renderTracker(order), 20000);
+  TRACKER_TIMER=setInterval(()=>refreshTracker(order),20000);
 }
 
 function closeTracker(){
-  $('#trackerBackdrop').hidden = true;
-  $('#trackerModal').hidden = true;
+  $('#trackerBackdrop').hidden=true;
+  $('#trackerModal').hidden=true;
   clearInterval(TRACKER_TIMER);
   setActiveNav('home');
 }
@@ -648,3 +749,101 @@ document.addEventListener('keydown', (e) => {
 });
 
 (async function init(){ await loadMenu(); await loadStores(); await loadDeals(); await refreshCartFromServer(); })();
+
+/* ---------------- PIZZOMANIA AI — PHASE 1 ---------------- */
+let AI_HISTORY = [];
+let AI_LAST_SUGGESTIONS = [];
+
+function aiFormat(text=''){
+  const safe=esc(text);
+  return safe.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+}
+function aiAddMessage(role,text){
+  const chat=$('#aiChat'); if(!chat) return;
+  const row=document.createElement('div'); row.className=`ai-msg ${role}`;
+  row.innerHTML=`<div class="ai-bubble">${aiFormat(text)}</div>`;
+  chat.appendChild(row); chat.scrollTop=chat.scrollHeight;
+}
+function aiSetActivity(trace=[]){
+  const el=$('#aiActivity'); if(!el) return;
+  if(!trace.length){ el.hidden=true; el.innerHTML=''; return; }
+  el.hidden=false;
+  el.innerHTML=trace.slice(-4).map(t=>`<span>${esc(t.label||'Checking…')}</span>`).join('');
+}
+function aiRenderSuggestions(suggestions=[]){
+  AI_LAST_SUGGESTIONS=suggestions||[];
+  const chat=$('#aiChat'); if(!chat || !AI_LAST_SUGGESTIONS.length) return;
+  const wrap=document.createElement('div'); wrap.className='ai-result-list';
+  wrap.innerHTML=AI_LAST_SUGGESTIONS.slice(0,3).map((p,i)=>`
+    <div class="ai-result">
+      <div class="ai-result-main">
+        <img class="ai-result-img" src="${esc(p.image||'')}" alt="${esc(p.name)}" onerror="this.style.visibility='hidden'">
+        <div>
+          <h3>${esc(p.name)}</h3>
+          <p>${esc(p.size)} · ${esc(p.crust)}${p.toppings?.length?` · ${p.toppings.map(esc).join(', ')}`:''}</p>
+          <div class="ai-price">$${Number(p.unit_price).toFixed(2)} · ${p.calories} cal</div>
+        </div>
+      </div>
+      <div class="ai-result-actions">
+        <button data-ai-customize="${i}">Customize</button>
+        <button class="ai-add" data-ai-add="${i}">Add to cart</button>
+      </div>
+    </div>`).join('');
+  chat.appendChild(wrap);
+  wrap.querySelectorAll('[data-ai-customize]').forEach(btn=>btn.onclick=()=>{
+    const p=AI_LAST_SUGGESTIONS[Number(btn.dataset.aiCustomize)];
+    if(p) { closeAI(); openCustomizeModal(p.id); }
+  });
+  wrap.querySelectorAll('[data-ai-add]').forEach(btn=>btn.onclick=async()=>{
+    const p=AI_LAST_SUGGESTIONS[Number(btn.dataset.aiAdd)]; if(!p) return;
+    try{
+      const r=await api('/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pizza_id:p.id,size:p.size,crust:p.crust,toppings:p.toppings||[],qty:p.qty||1})});
+      CART=r.cart; SUBTOTAL=r.subtotal; renderCart(); bumpCart(); setAgentFlow('order', `Customer approved ${p.name} — the validated pizza is now in the cart.`); toast(`${p.name} added to cart.`);
+      aiAddMessage('assistant',`Done — **${p.name}** is in your cart. You can keep shopping or head to checkout.`);
+    }catch(e){ toast(e.message); }
+  });
+  chat.scrollTop=chat.scrollHeight;
+}
+function aiReset(){
+  AI_HISTORY=[]; AI_LAST_SUGGESTIONS=[];
+  $('#aiChat').innerHTML='';
+  $('#aiActivity').hidden=true; $('#aiActivity').innerHTML='';
+  aiAddMessage('assistant','👋 Hey! I\'m your pizza co-pilot. Tell me what you\'re craving — for example, “spicy and cheesy under $18” or “vegetarian for the family.”');
+}
+function openAI(prefill=''){
+  setAgentFlow('agent', 'Pizzomania AI is listening and ready to build a pizza.');
+  $('#aiBackdrop').hidden=false; $('#aiModal').hidden=false;
+  if(!$('#aiChat').children.length) aiReset();
+  if(prefill){ $('#aiInput').value=prefill; sendAIMessage(); }
+  setTimeout(()=>$('#aiInput').focus(),50);
+}
+function closeAI(){ $('#aiBackdrop').hidden=true; $('#aiModal').hidden=true; }
+async function sendAIMessage(){
+  const input=$('#aiInput'); const message=(input.value||'').trim();
+  if(!message) return;
+  input.value=''; $('#aiSendBtn').disabled=true;
+  aiAddMessage('user',message);
+  AI_HISTORY.push({role:'user',content:message});
+  aiSetActivity([{label:'Understanding your craving'}]);
+  try{
+    const r=await api('/api/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      message,
+      history:AI_HISTORY.slice(-8),
+      context:{page:'build-pizza',cart:CART.map(x=>({pizza_id:x.pizza_id,name:x.name,qty:x.qty})),fulfilment:FULFILMENT}
+    })});
+    aiSetActivity(r.trace||[]);
+    aiAddMessage('assistant',r.reply||'I can help you build a pizza.');
+    AI_HISTORY.push({role:'assistant',content:r.reply||''});
+    if(r.suggestions?.length) aiRenderSuggestions(r.suggestions);
+  }catch(e){ aiAddMessage('assistant',`I couldn't reach the pizza builder right now. ${e.message}`); }
+  finally{ $('#aiSendBtn').disabled=false; input.focus(); }
+}
+
+$('#aiOpenBtn')?.addEventListener('click',()=>openAI());
+$('#aiFloatingBtn')?.addEventListener('click',()=>openAI());
+$('#aiCloseBtn')?.addEventListener('click',closeAI);
+$('#aiBackdrop')?.addEventListener('click',closeAI);
+$('#aiSendBtn')?.addEventListener('click',sendAIMessage);
+$('#aiInput')?.addEventListener('keydown',e=>{if(e.key==='Enter') sendAIMessage();});
+$$('[data-ai-prompt]').forEach(btn=>btn.addEventListener('click',()=>openAI(btn.dataset.aiPrompt)));
+document.addEventListener('keydown',e=>{if(e.key==='Escape') closeAI();});
