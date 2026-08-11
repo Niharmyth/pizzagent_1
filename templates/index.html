@@ -14,7 +14,7 @@
 <header class="site-header">
   <div class="site-header-inner">
     <a href="#homeTop" class="brand" data-nav="home" aria-label="{{ agent_name }} — home">
-      <img src="{{ url_for('static', filename='images/logo.png') }}" alt="{{ agent_name }}" class="brand-logo">
+      <img src="{{ url_for('static', filename='images/logo-transparent.png') }}" alt="{{ agent_name }}" class="brand-logo">
     </a>
     <nav class="main-nav" id="mainNav">
       <button data-nav="home" class="nav-link active">Home</button>
@@ -34,16 +34,24 @@
   </div>
 </header>
 
-<section class="hero" id="homeTop">
-  <div class="hero-media">
-    <img src="{{ hero_image }}" alt="Pizzomania — real pizza, zero compromises. Fresh ingredients, bold flavours, made for people who take pizza seriously." class="hero-img">
-  </div>
-  <div class="hero-cta-bar">
-    <h1 class="sr-only">{{ agent_name }} &mdash; Real pizza. Zero compromises.</h1>
-    <p class="sr-only">Fresh ingredients. Bold flavours. Made for people who take pizza seriously.</p>
-    <div class="hero-actions">
-      <button class="primary-btn hero-cta" id="heroOrderBtn">Order Now &rarr;</button>
-      <a class="hero-secondary" href="#menuSection">Explore the Menu</a>
+<section class="hero" id="homeTop" aria-labelledby="heroTitle">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <p class="hero-eyebrow">FRESH &middot; LOADED &middot; OBSESSED</p>
+      <h1 id="heroTitle">Real pizza.<br><span>Zero compromises.</span></h1>
+      <p class="hero-lede">Fresh ingredients. Bold flavours. Made for people who take pizza seriously.</p>
+      <div class="hero-actions">
+        <button class="primary-btn hero-cta" id="heroOrderBtn">Order Now &rarr;</button>
+        <a class="hero-secondary" href="#menuSection">Explore the Menu</a>
+      </div>
+      <div class="hero-trust" aria-label="Pizzomania highlights">
+        <span><strong>4.9/5</strong> happy customers</span>
+        <span><strong>25 min</strong> average delivery</span>
+        <span><strong>$0</strong> delivery over $30</span>
+      </div>
+    </div>
+    <div class="hero-media">
+      <img src="{{ hero_image }}" alt="Freshly baked Pizzomania pizza with basil and pepperoni" class="hero-img">
     </div>
   </div>
 </section>
@@ -57,13 +65,13 @@
     <button class="deal-nav next" id="dealNext" aria-label="Next deal">&#8250;</button>
     <div class="deal-dots" id="dealDots"></div>
   </div>
-  <p class="deals-note">Demo deals shown for illustration &mdash; codes aren't applied at checkout yet.</p>
+  <p class="deals-note">Some promo codes are demo-only; free delivery over $30 is applied at checkout.</p>
 </section>
 
 <main class="layout">
   <section class="menu-section" id="menuSection">
     <div class="menu-toolbar">
-      <input id="menuSearch" class="search-input" type="search" placeholder="🔍 Search pizzas by name or ingredient…">
+      <input id="menuSearch" class="search-input" type="search" placeholder="Search pizzas by name or ingredient…">
       <div class="filter-chips" id="filterChips">
         <button class="chip" data-filter="vegan">Vegan</button>
         <button class="chip" data-filter="vegetarian">Vegetarian</button>
@@ -81,7 +89,7 @@
   </section>
 
   <aside class="cart-panel" id="cartPanel">
-    <h2>🛒 Your Cart</h2>
+    <h2>Your Cart</h2>
     <div id="cartItems" class="cart-items"><p class="muted">Your cart is empty.</p></div>
     <div class="cart-total"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
     <button id="checkoutBtn" class="primary-btn" disabled>Checkout &rarr;</button>

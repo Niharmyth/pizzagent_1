@@ -15,11 +15,10 @@ Opens at http://0.0.0.0:PORT (see PORT constant below).
 """
 
 import math
+import os
 import random
 import string
 from datetime import datetime, timezone
-from urllib.parse import quote
-
 import requests
 from flask import Flask, jsonify, render_template, request, session
 
@@ -32,7 +31,7 @@ PORT = 8083
 # ============================================================
 
 app = Flask(__name__)
-app.secret_key = "pizzomania-demo-secret-key-change-me"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-pizzomania-secret-change-me")
 
 GEMINI_ENABLED = bool(GEMINI_API_KEY) and GEMINI_API_KEY != "PASTE_YOUR_GEMINI_API_KEY_HERE"
 _genai_client = None
@@ -46,16 +45,10 @@ if GEMINI_ENABLED:
 
 # ------------------------------------------------------------
 # IMAGES
-# Hotlinked from Wikimedia Commons (free, no key, stable CDN) via the
-# Special:FilePath redirect. If a filename ever gets renamed on Commons,
-# the <img> has a CSS/JS fallback in the frontend so it never shows a
-# broken-image icon.
+# All customer-facing product photography is served locally so the
+# menu remains fast, consistent and independent of third-party image hosts.
 # ------------------------------------------------------------
-def wiki_img(filename, width=700):
-    return f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(filename)}?width={width}"
-
-
-HERO_IMAGE = "/static/images/hero.webp"
+HERO_IMAGE = "/static/images/hero-pizza.webp"
 
 # ------------------------------------------------------------
 # MENU DATA
@@ -105,7 +98,7 @@ PIZZAS = [
     {"id": "s3", "category": "single", "name": "Mediterranean Falafel",
      "description": "Falafel, hummus drizzle, olives, spinach, semi-dried tomato.",
      "base_price": 15.50, "base_cal": 640, "tags": ["Vegan"],
-     "image": wiki_img("Mediterranean Pizza from BJ's Restaurant & Brewhouse.jpg"),
+     "image": "/static/images/pizzas/mediterranean.webp",
      "rating": 4.6, "reviews": 178},
     {"id": "s4", "category": "single", "name": "Lean BBQ Chicken & Corn",
      "description": "Grilled chicken breast, corn, red onion, light BBQ base.",
@@ -116,43 +109,43 @@ PIZZAS = [
     {"id": "f1", "category": "family", "name": "Family Veggie Feast",
      "description": "A generous mix of roast vegetables and vegan cheese. Serves 4-6.",
      "base_price": 24.90, "base_cal": 1800, "tags": ["Vegan", "Healthy Choice"],
-     "image": "/static/images/pizzas/garden.webp",
+     "image": "/static/images/pizzas/family_veggie.webp",
      "rating": 4.8, "reviews": 190},
     {"id": "f2", "category": "family", "name": "Family Margherita",
      "description": "Classic tomato and cheese the whole family can agree on. Serves 4-6.",
      "base_price": 23.90, "base_cal": 1700, "tags": ["Vegetarian"],
-     "image": "/static/images/pizzas/margherita.webp",
+     "image": "/static/images/pizzas/family_margherita.webp",
      "rating": 4.9, "reviews": 233},
     {"id": "f3", "category": "family", "name": "Family Lean Supreme",
      "description": "Chicken, capsicum, mushroom, olives, light cheese. Serves 4-6.",
      "base_price": 26.90, "base_cal": 1950, "tags": ["Healthy Choice"],
-     "image": "/static/images/pizzas/fungi.webp",
+     "image": "/static/images/pizzas/family_supreme.webp",
      "rating": 4.6, "reviews": 121},
     {"id": "f4", "category": "family", "name": "Family BBQ Chicken",
      "description": "Grilled chicken, corn, red onion, smoky BBQ base. Serves 4-6.",
      "base_price": 27.90, "base_cal": 2000, "tags": [],
-     "image": "/static/images/pizzas/bbq.webp",
+     "image": "/static/images/pizzas/family_bbq.webp",
      "rating": 4.7, "reviews": 208},
     # ---------------- KIDS ----------------
     {"id": "k1", "category": "kids", "name": "Mini Cheese Smiles",
      "description": "Mild cheese and tomato base, cut into smiley slices.",
      "base_price": 9.90, "base_cal": 420, "tags": ["Vegetarian"],
-     "image": wiki_img("Pizza slice.jpg"),
+     "image": "/static/images/pizzas/kids_cheese.webp",
      "rating": 4.9, "reviews": 356},
     {"id": "k2", "category": "kids", "name": "Veggie Stars",
      "description": "Corn, capsicum and vegan cheese, cut into fun star shapes.",
      "base_price": 10.50, "base_cal": 400, "tags": ["Vegan"],
-     "image": "/static/images/pizzas/garden.webp",
+     "image": "/static/images/pizzas/kids_veggie.webp",
      "rating": 4.5, "reviews": 142},
     {"id": "k3", "category": "kids", "name": "Ham & Pineapple Buddies",
      "description": "A kid-favourite: ham and pineapple, mild cheese.",
      "base_price": 10.90, "base_cal": 450, "tags": [],
-     "image": wiki_img("Ham and pineapple pizza, The Mill Pizza.jpg"),
+     "image": "/static/images/pizzas/kids_ham_pineapple.webp",
      "rating": 4.6, "reviews": 289},
     {"id": "k4", "category": "kids", "name": "Mini Margherita Munchkins",
      "description": "Simple tomato and mozzarella, cut into small squares.",
      "base_price": 9.50, "base_cal": 400, "tags": ["Vegetarian"],
-     "image": "/static/images/pizzas/margherita.webp",
+     "image": "/static/images/pizzas/kids_mini_margherita.webp",
      "rating": 4.8, "reviews": 197},
 ]
 PIZZA_BY_ID = {p["id"]: p for p in PIZZAS}
@@ -483,7 +476,7 @@ def api_order_process():
                 ),
             })
 
-        delivery_fee = 0.0 if fulfilment == "pickup" else (4.99 if can_fulfil else 0.0)
+        delivery_fee = 0.0 if fulfilment == "pickup" else (0.0 if subtotal >= 30.0 else 4.99 if can_fulfil else 0.0)
         total = round(subtotal + delivery_fee, 2)
 
         gemini_message, mode = gemini_delivery_message(cart_summary, fulfilment, store, distance_km, can_fulfil)
