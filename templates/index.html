@@ -11,15 +11,27 @@
 </head>
 <body>
 
-<div class="util-bar">
-  <div class="util-brand">🍕 {{ agent_name }}</div>
-  <div class="toolbar">
-    <button id="simpleToggle" class="toggle-btn">Simple mode</button>
-    <button id="largeToggle" class="toggle-btn">A+ Large text</button>
+<header class="site-header">
+  <div class="site-header-inner">
+    <div class="brand">🍕 {{ agent_name }}</div>
+    <nav class="main-nav" id="mainNav">
+      <button data-nav="home" class="nav-link active">Home</button>
+      <button data-nav="menu" class="nav-link">Menu</button>
+      <button data-nav="deals" class="nav-link">Deals</button>
+      <button data-nav="track" class="nav-link">Track Order</button>
+      <button data-nav="account" class="nav-link">Account</button>
+    </nav>
+    <div class="header-actions">
+      <button id="simpleToggle" class="toggle-btn" title="Simple mode">Simple</button>
+      <button id="largeToggle" class="toggle-btn" title="Large text">A+</button>
+      <button id="navCartBtn" class="cart-icon-btn" data-nav="cart">
+        🛒<span id="navCartCount" class="cart-count" hidden>0</span>
+      </button>
+    </div>
   </div>
-</div>
+</header>
 
-<section class="hero" style="background-image:url('{{ hero_image }}')">
+<section class="hero" id="homeTop" style="background-image:url('{{ hero_image }}')">
   <div class="hero-overlay">
     <div class="hero-content">
       <span class="hero-eyebrow">Vegan-friendly &middot; Family-owned &middot; NSW Hills District</span>
@@ -101,6 +113,54 @@
 <footer class="site-footer">
   <p>{{ agent_name }} &mdash; a practice/demo agentic ordering app. Not a real pizza company.</p>
 </footer>
+
+<!-- Bottom nav (mobile only) -->
+<nav class="bottom-nav" id="bottomNav">
+  <button data-nav="home" class="bn-btn active"><span class="bn-icon">🏠</span><span class="bn-label">Home</span></button>
+  <button data-nav="menu" class="bn-btn"><span class="bn-icon">🍕</span><span class="bn-label">Menu</span></button>
+  <button data-nav="cart" class="bn-btn"><span class="bn-icon">🛒<span id="bottomCartCount" class="cart-count" hidden>0</span></span><span class="bn-label">Cart</span></button>
+  <button data-nav="track" class="bn-btn"><span class="bn-icon">📦</span><span class="bn-label">Orders</span></button>
+  <button data-nav="account" class="bn-btn"><span class="bn-icon">👤</span><span class="bn-label">Account</span></button>
+</nav>
+
+<!-- Full-screen / modal pizza customization builder -->
+<div id="modalBackdrop" class="modal-backdrop" hidden></div>
+<div id="customizeModal" class="customize-modal" hidden role="dialog" aria-modal="true">
+  <button id="modalCloseBtn" class="modal-close" aria-label="Close">&times;</button>
+  <div class="modal-scroll">
+    <div class="modal-photo" id="modalPhoto">
+      <span class="photo-fallback">🍕</span>
+      <img id="modalImg" alt="" onerror="this.remove()">
+      <div class="photo-badges" id="modalBadges"></div>
+    </div>
+    <div class="modal-body">
+      <h2 id="modalTitle"></h2>
+      <p id="modalDesc" class="pizza-desc"></p>
+      <div class="modal-meta"><span class="cal" id="modalCal"></span></div>
+
+      <div class="opt-group"><span class="opt-label">Size</span><div id="modalSizeOptions" class="opt-row"></div></div>
+      <div class="opt-group"><span class="opt-label">Crust</span><div id="modalCrustOptions" class="opt-row"></div></div>
+      <div class="opt-group"><span class="opt-label">Extra toppings</span><div class="topping-grid" id="modalToppingOptions"></div></div>
+
+      <div class="qty-row">
+        <span class="opt-label">Qty</span>
+        <button class="qty-btn" id="modalQtyDec">-</button>
+        <span id="modalQty">1</span>
+        <button class="qty-btn" id="modalQtyInc">+</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button id="modalAddBtn" class="primary-btn">Add to cart</button>
+  </div>
+</div>
+
+<!-- Simple stub panel for Deals / Track Order / Account (not built yet — future versions) -->
+<div id="stubBackdrop" class="modal-backdrop" hidden></div>
+<div id="stubModal" class="stub-modal" hidden>
+  <button id="stubCloseBtn" class="modal-close" aria-label="Close">&times;</button>
+  <div id="stubContent" class="stub-content"></div>
+</div>
 
 <div id="toast" class="toast"></div>
 

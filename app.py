@@ -1,5 +1,5 @@
 """
-Healthy Pizza APP - Flask agentic demo.
+Pizzomania - Flask agentic demo.
 
 Files:
     app.py               - backend logic + API (this file)
@@ -14,6 +14,7 @@ Run:
 Opens at http://0.0.0.0:PORT (see PORT constant below).
 """
 
+import os
 import math
 import random
 import string
@@ -25,8 +26,9 @@ from flask import Flask, jsonify, render_template, request, session
 # ============================================================
 # HAND-EDITABLE CONSTANTS
 # ============================================================
-GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
-AGENT_NAME = "Healthy Pizza APP"
+# GEMINI_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "PASTE_YOUR_GEMINI_API_KEY_HERE")
+AGENT_NAME = "pizzomania"
 PORT = 8083
 # ============================================================
 

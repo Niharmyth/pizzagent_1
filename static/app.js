@@ -2,6 +2,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 let MENU = null, CART = [], SUBTOTAL = 0, CATEGORY = 'single';
 let FULFILMENT = null, SELECTED_STORE = null, SELECTED_ADDRESS = null, STORES = [];
+let CURRENT_PIZZA_ID = null, MODAL_QTY = 1;
 
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function esc(s=''){ return String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
@@ -17,24 +18,24 @@ async function loadMenu(){ MENU = await api('/api/menu'); renderMenu(); }
 async function loadStores(){ const d = await api('/api/stores'); STORES = d.stores; }
 async function refreshCartFromServer(){ const r = await api('/api/cart'); CART=r.cart; SUBTOTAL=r.subtotal; renderCart(); }
 
+function badgeClass(tag){ return tag === 'Healthy Choice' ? 'badge tomato' : 'badge'; }
+
+/* ---------------- MENU / CARDS ---------------- */
+
 function renderMenu(){
   const grid = $('#menuGrid');
   const pizzas = MENU.pizzas.filter(p => p.category === CATEGORY);
   grid.innerHTML = pizzas.map(p => renderPizzaCard(p)).join('');
-  pizzas.forEach(p => bindCard(p));
+  pizzas.forEach(p => {
+    $(`.customize-btn[data-id="${p.id}"]`).onclick = () => openCustomizeModal(p.id);
+  });
 }
 
-function badgeClass(tag){ return tag === 'Healthy Choice' ? 'badge tomato' : 'badge'; }
-
 function renderPizzaCard(p){
-  const sizes = MENU.allowed_sizes[p.category];
   const tagsHtml = p.tags.map(t => `<span class="${badgeClass(t)}">${esc(t)}</span>`).join('');
-  const sizeOptions = sizes.map((s,i) => `<label class="opt"><input type="radio" name="size-${p.id}" value="${s}" ${i===0?'checked':''}> ${s}</label>`).join('');
-  const crustOptions = MENU.crusts.map((c,i) => `<label class="opt"><input type="radio" name="crust-${p.id}" value="${esc(c.name)}" ${i===0?'checked':''}> ${esc(c.name)}${c.price>0?` (+$${c.price.toFixed(2)})`:''}</label>`).join('');
-  const toppingOptions = MENU.toppings.map(t => `<label class="opt"><input type="checkbox" name="topping-${p.id}" value="${esc(t.name)}"> ${esc(t.name)} (+$${t.price.toFixed(2)})</label>`).join('');
   return `
   <article class="pizza-card">
-    <div class="pizza-photo" id="photo-${p.id}">
+    <div class="pizza-photo">
       <span class="photo-fallback">🍕</span>
       <div class="photo-badges">${tagsHtml}</div>
       <img src="${esc(p.image || '')}" alt="${esc(p.name)}" loading="lazy"
@@ -46,64 +47,83 @@ function renderPizzaCard(p){
       <p class="pizza-desc">${esc(p.description)}</p>
       <div class="pizza-meta"><span class="price">From $${p.base_price.toFixed(2)}</span><span class="cal">${p.base_cal} cal</span></div>
       <button class="secondary-btn customize-btn" data-id="${p.id}">Customize &amp; Add</button>
-      <div class="customize-panel" id="panel-${p.id}" hidden>
-        <div class="opt-group"><span class="opt-label">Size</span>${sizeOptions}</div>
-        <div class="opt-group"><span class="opt-label">Crust</span>${crustOptions}</div>
-        <div class="opt-group"><span class="opt-label">Extra toppings</span><div class="topping-grid">${toppingOptions}</div></div>
-        <div class="qty-row">
-          <span class="opt-label">Qty</span>
-          <button class="qty-btn" data-action="dec" data-id="${p.id}">-</button>
-          <span id="qty-${p.id}">1</span>
-          <button class="qty-btn" data-action="inc" data-id="${p.id}">+</button>
-        </div>
-        <button class="primary-btn add-btn" data-id="${p.id}">Add to cart &mdash; $${p.base_price.toFixed(2)}</button>
-      </div>
     </div>
   </article>`;
 }
 
-function bindCard(p){
-  const panel = $(`#panel-${p.id}`);
-  $(`.customize-btn[data-id="${p.id}"]`).onclick = () => { panel.hidden = !panel.hidden; };
-  let qty = 1;
-  panel.querySelectorAll(`.qty-btn[data-id="${p.id}"]`).forEach(b => {
-    b.onclick = () => { qty = b.dataset.action==='inc' ? qty+1 : Math.max(1,qty-1); $(`#qty-${p.id}`).textContent=qty; updateAddPrice(p.id); };
+/* ---------------- CUSTOMIZATION MODAL ---------------- */
+
+function openCustomizeModal(pizzaId){
+  const p = MENU.pizzas.find(x => x.id === pizzaId);
+  if(!p) return;
+  CURRENT_PIZZA_ID = pizzaId;
+  MODAL_QTY = 1;
+
+  $('#modalImg').src = p.image || '';
+  $('#modalImg').alt = p.name;
+  $('#modalBadges').innerHTML = p.tags.map(t => `<span class="${badgeClass(t)}">${esc(t)}</span>`).join('');
+  $('#modalTitle').textContent = p.name;
+  $('#modalDesc').textContent = p.description;
+  $('#modalCal').textContent = `${p.base_cal} cal (base)`;
+  $('#modalQty').textContent = MODAL_QTY;
+
+  const sizes = MENU.allowed_sizes[p.category];
+  $('#modalSizeOptions').innerHTML = sizes.map((s,i) => `<label class="opt"><input type="radio" name="modalSize" value="${s}" ${i===0?'checked':''}> ${s}</label>`).join('');
+  $('#modalCrustOptions').innerHTML = MENU.crusts.map((c,i) => `<label class="opt"><input type="radio" name="modalCrust" value="${esc(c.name)}" ${i===0?'checked':''}> ${esc(c.name)}${c.price>0?` (+$${c.price.toFixed(2)})`:''}</label>`).join('');
+  $('#modalToppingOptions').innerHTML = MENU.toppings.map(t => `<label class="opt"><input type="checkbox" name="modalTopping" value="${esc(t.name)}"> ${esc(t.name)} (+$${t.price.toFixed(2)})</label>`).join('');
+
+  $$('#modalSizeOptions input, #modalCrustOptions input, #modalToppingOptions input').forEach(inp => {
+    inp.addEventListener('change', updateModalPrice);
   });
-  panel.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => updateAddPrice(p.id)));
-  $(`.add-btn[data-id="${p.id}"]`).onclick = () => addToCart(p.id, qty);
-  updateAddPrice(p.id);
+
+  updateModalPrice();
+
+  $('#modalBackdrop').hidden = false;
+  $('#customizeModal').hidden = false;
+  document.body.style.overflow = 'hidden';
 }
 
-function getSelection(pizzaId){
-  const size = document.querySelector(`input[name="size-${pizzaId}"]:checked`).value;
-  const crust = document.querySelector(`input[name="crust-${pizzaId}"]:checked`).value;
-  const toppings = [...document.querySelectorAll(`input[name="topping-${pizzaId}"]:checked`)].map(i=>i.value);
+function closeModal(){
+  $('#modalBackdrop').hidden = true;
+  $('#customizeModal').hidden = true;
+  document.body.style.overflow = '';
+}
+
+function getModalSelection(){
+  const size = document.querySelector('input[name="modalSize"]:checked')?.value;
+  const crust = document.querySelector('input[name="modalCrust"]:checked')?.value;
+  const toppings = [...document.querySelectorAll('input[name="modalTopping"]:checked')].map(i => i.value);
   return {size, crust, toppings};
 }
 
-function updateAddPrice(pizzaId){
-  const p = MENU.pizzas.find(x => x.id === pizzaId);
-  const {size, crust, toppings} = getSelection(pizzaId);
+function updateModalPrice(){
+  const p = MENU.pizzas.find(x => x.id === CURRENT_PIZZA_ID);
+  if(!p) return;
+  const {size, crust, toppings} = getModalSelection();
   const sizeStep = MENU.size_price_step;
   const allowed = MENU.allowed_sizes[p.category];
   const base = allowed[0];
   const sizeMod = sizeStep[size] - sizeStep[base];
   const crustObj = MENU.crusts.find(c => c.name === crust);
   const toppingSum = toppings.reduce((s,name) => s + (MENU.toppings.find(t=>t.name===name)?.price||0), 0);
-  const qty = parseInt($(`#qty-${pizzaId}`).textContent,10) || 1;
   const unit = p.base_price + sizeMod + (crustObj?crustObj.price:0) + toppingSum;
-  const btn = $(`.add-btn[data-id="${pizzaId}"]`);
-  if(btn) btn.textContent = `Add to cart — $${(unit*qty).toFixed(2)}`;
+  $('#modalAddBtn').textContent = `Add to cart — $${(unit*MODAL_QTY).toFixed(2)}`;
 }
 
-async function addToCart(pizzaId, qty){
-  const {size, crust, toppings} = getSelection(pizzaId);
+$('#modalQtyDec').onclick = () => { MODAL_QTY = Math.max(1, MODAL_QTY-1); $('#modalQty').textContent = MODAL_QTY; updateModalPrice(); };
+$('#modalQtyInc').onclick = () => { MODAL_QTY += 1; $('#modalQty').textContent = MODAL_QTY; updateModalPrice(); };
+$('#modalCloseBtn').onclick = closeModal;
+$('#modalBackdrop').onclick = closeModal;
+document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeModal(); closeStub(); } });
+
+$('#modalAddBtn').onclick = async () => {
+  const {size, crust, toppings} = getModalSelection();
   try{
-    const r = await api('/api/cart/add', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pizza_id:pizzaId,size,crust,toppings,qty})});
-    CART=r.cart; SUBTOTAL=r.subtotal; renderCart(); toast('Added to cart.');
-    bumpCart();
+    const r = await api('/api/cart/add', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pizza_id:CURRENT_PIZZA_ID,size,crust,toppings,qty:MODAL_QTY})});
+    CART=r.cart; SUBTOTAL=r.subtotal; renderCart(); toast('Added to cart.'); bumpCart();
+    closeModal();
   }catch(e){ toast(e.message); }
-}
+};
 
 function bumpCart(){
   const panel = $('#cartPanel');
@@ -111,6 +131,8 @@ function bumpCart(){
   void panel.offsetWidth;
   panel.classList.add('bump');
 }
+
+/* ---------------- CART ---------------- */
 
 function renderCart(){
   const box = $('#cartItems');
@@ -129,6 +151,16 @@ function renderCart(){
   }
   $('#cartSubtotal').textContent = `$${SUBTOTAL.toFixed(2)}`;
   $('#checkoutBtn').disabled = CART.length === 0;
+  updateCartBadges();
+}
+
+function updateCartBadges(){
+  const count = CART.reduce((n,i) => n+i.qty, 0);
+  [$('#navCartCount'), $('#bottomCartCount')].forEach(el => {
+    if(!el) return;
+    el.textContent = count > 99 ? '99+' : count;
+    el.hidden = count === 0;
+  });
 }
 
 async function removeItem(idx){
@@ -265,5 +297,40 @@ function showConfirmation(order){
 
 $('#simpleToggle').onclick = () => { document.documentElement.classList.toggle('simple-mode'); $('#simpleToggle').classList.toggle('active'); };
 $('#largeToggle').onclick = () => { document.documentElement.classList.toggle('large-text'); $('#largeToggle').classList.toggle('active'); };
+
+/* ---------------- NAVIGATION (top nav + bottom nav) ---------------- */
+
+const STUB_CONTENT = {
+  deals: {icon:'🏷️', title:'Deals', body:"Promo banners and daily deals are landing in a future version — check back soon."},
+  track: {icon:'📦', title:'Track Order', body:"Live order tracking (prep → bake → out for delivery) is planned for a future version."},
+  account: {icon:'👤', title:'Account', body:"Accounts, saved addresses and order history aren't part of this demo yet."},
+};
+
+function openStub(key){
+  const s = STUB_CONTENT[key];
+  if(!s) return;
+  $('#stubContent').innerHTML = `<div class="stub-icon">${s.icon}</div><h3>${esc(s.title)}</h3><p>${esc(s.body)}</p>`;
+  $('#stubBackdrop').hidden = false;
+  $('#stubModal').hidden = false;
+}
+function closeStub(){ $('#stubBackdrop').hidden = true; $('#stubModal').hidden = true; }
+$('#stubCloseBtn').onclick = closeStub;
+$('#stubBackdrop').onclick = closeStub;
+
+function setActiveNav(target){
+  $$('.nav-link, .bn-btn').forEach(el => el.classList.toggle('active', el.dataset.nav === target));
+}
+
+function handleNav(target){
+  setActiveNav(target);
+  if(target === 'home'){ $('#homeTop').scrollIntoView({behavior:'smooth'}); }
+  else if(target === 'menu'){ $('#menuSection').scrollIntoView({behavior:'smooth'}); }
+  else if(target === 'cart'){ $('#cartPanel').scrollIntoView({behavior:'smooth'}); bumpCart(); }
+  else if(target === 'deals' || target === 'track' || target === 'account'){ openStub(target); }
+}
+
+$$('.nav-link, .bn-btn, .cart-icon-btn').forEach(el => {
+  el.addEventListener('click', () => handleNav(el.dataset.nav));
+});
 
 (async function init(){ await loadMenu(); await loadStores(); await refreshCartFromServer(); })();
