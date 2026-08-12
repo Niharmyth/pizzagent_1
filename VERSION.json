@@ -1,8 +1,9 @@
 {
-  "version": "8.0.0",
-  "codename": "Pizzomania Gemini Interactions API",
-  "baseline": "V7 canonical + Gemini Interactions API migration",
+  "version": "11.0.0",
+  "codename": "Pizzomania AI Menu Matching & Tool Grounding",
+  "baseline": "V9 responsive AI + Gemini Interactions API + semantic menu matching",
   "status": "canonical",
   "source_of_truth": "main",
-  "notes": "Gemini agent migrated from generateContent to the current Interactions API with gemini-3.6-flash default. Tool calls remain server-validated."
+  "source_commit": "34a25f0b28148539b7fe1c3128e8104eb73ac6fa",
+  "notes": "V11 adds semantic menu matching, Inferno Spicy Chicken, deterministic matching improvements, and server-side candidate-ID enforcement for build_pizza."
 }
