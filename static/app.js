@@ -867,18 +867,30 @@ async function sendAIMessage(){
   AI_HISTORY.push({role:'user',content:message});
   aiSetActivity([{label:'Understanding your craving'}]);
   try{
-    const r=await api('/api/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),35000);
+    const r=await api('/api/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({
       message,
       history:AI_INTERACTION_ID ? [] : AI_HISTORY.slice(0,-1).slice(-8),
       interaction_id:AI_INTERACTION_ID,
       context:{page:'build-pizza',cart:CART.map(x=>({pizza_id:x.pizza_id,name:x.name,qty:x.qty})),fulfilment:FULFILMENT,lastProposal:AI_LAST_SUGGESTIONS[0]||null}
     })});
+    clearTimeout(timeout);
     if(r.interaction_id) AI_INTERACTION_ID=r.interaction_id;
     aiSetActivity(r.trace||[]);
     aiAddMessage('assistant',r.reply||'I can help you build a pizza.');
     AI_HISTORY.push({role:'assistant',content:r.reply||''});
     if(r.suggestions?.length) aiRenderSuggestions(r.suggestions);
-  }catch(e){ aiAddMessage('assistant',`I couldn't reach the pizza builder right now. ${e.message}`); }
+  }catch(e){
+    const msg=e.name==='AbortError' ? 'The AI is taking longer than expected. I switched to a faster local pizza matcher — try “spicy under $18” or “vegetarian under $15”.' : `I couldn't reach the pizza builder right now. ${e.message}`;
+    aiAddMessage('assistant',msg);
+    if(e.name==='AbortError'){
+      try{
+        const fallback=await api('/api/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history:AI_HISTORY.slice(-8),interaction_id:'',context:{page:'build-pizza',cart:CART.map(x=>({pizza_id:x.pizza_id,name:x.name,qty:x.qty})),fulfilment:FULFILMENT,lastProposal:AI_LAST_SUGGESTIONS[0]||null}})});
+        if(fallback.reply){ aiAddMessage('assistant',fallback.reply); if(fallback.suggestions?.length) aiRenderSuggestions(fallback.suggestions); }
+      }catch(_){ }
+    }
+  }
   finally{ $('#aiSendBtn').disabled=false; input.focus(); }
 }
 

@@ -357,7 +357,8 @@ def make_order_number():
 # ------------------------------------------------------------
 # PIZZOMANIA AI — PHASE 1
 # ------------------------------------------------------------
-AGENT_MAX_ROUNDS = 4
+AGENT_MAX_ROUNDS = 3
+AGENT_REQUEST_TIMEOUT_SECONDS = 30
 
 
 def _normalise(s):
@@ -646,7 +647,12 @@ def _interaction_steps(interaction):
 
 
 def _gemini_agent(message, history, context, interaction_id=None):
-    """Run Pizzomania AI through Google's current Interactions API."""
+    """Run Pizzomania AI through Interactions API with bounded, fail-safe tool use.
+
+    Important: interaction-scoped settings (system instruction/tools) are supplied on
+    every turn. Once a validated pizza exists, the final turn is deliberately run
+    without custom tools so the model cannot keep calling build_pizza indefinitely.
+    """
     rag = retrieve_context(message, top_k=4)
     record_agent_event("Pizza AI", "RAG retrieval", f"Retrieved {len(rag['chunks'])} knowledge chunks.")
 
@@ -659,7 +665,10 @@ def _gemini_agent(message, history, context, interaction_id=None):
         "When a user wants a pizza, use search_menu then build_pizza to validate a "
         "concrete suggestion. A pizza proposal is only a suggestion until the user "
         "approves it. Use retrieved knowledge only as supporting context; authoritative "
-        "menu/pricing/order facts come from tools.\n\n"
+        "menu/pricing/order facts come from tools. After you receive a successful "
+        "build_pizza result, stop calling tools and provide the user with a concise "
+        "recommendation. For follow-up changes, modify the current proposal and then "
+        "stop after the successful validation.\n\n"
         f"RETRIEVED KNOWLEDGE:\n{rag['context']}\n\n"
         f"CURRENT APP CONTEXT:\n{context or {}}"
     )
@@ -667,15 +676,23 @@ def _gemini_agent(message, history, context, interaction_id=None):
     tool_declarations = _gemini_tool_declarations()
     trace = []
     suggestions = []
+    last_built = None
+
+    def create_turn(input_value, previous_id=None, tools=None, prompt_system=system):
+        kwargs = {
+            "model": GEMINI_MODEL,
+            "input": input_value,
+            "system_instruction": prompt_system,
+            "store": True,
+        }
+        if previous_id:
+            kwargs["previous_interaction_id"] = previous_id
+        if tools is not None:
+            kwargs["tools"] = tools
+        return _genai_client.interactions.create(**kwargs)
 
     if interaction_id:
-        interaction = _genai_client.interactions.create(
-            model=GEMINI_MODEL,
-            previous_interaction_id=interaction_id,
-            input=message,
-            tools=tool_declarations,
-            store=True,
-        )
+        interaction = create_turn(message, previous_id=interaction_id, tools=tool_declarations)
     else:
         history_text = ""
         if history:
@@ -684,21 +701,17 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 f"{t.get('role','user').upper()}: {t.get('content','')}" for t in compact
             )
         prompt = f"{history_text}\n\nUSER:\n{message}".strip()
-        interaction = _genai_client.interactions.create(
-            model=GEMINI_MODEL,
-            input=prompt,
-            tools=tool_declarations,
-            system_instruction=system,
-            store=True,
-        )
+        interaction = create_turn(prompt, tools=tool_declarations)
 
-    for _ in range(AGENT_MAX_ROUNDS):
+    for round_no in range(AGENT_MAX_ROUNDS):
         calls = [
             step for step in _interaction_steps(interaction)
             if getattr(step, "type", None) == "function_call"
         ]
         if not calls:
             text = _interaction_text(interaction)
+            if last_built and not suggestions:
+                suggestions.append(last_built)
             return {
                 "reply": text or "I can help you build a pizza.",
                 "suggestions": suggestions,
@@ -740,7 +753,8 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 name,
             )
             if name == "build_pizza" and result.get("ok"):
-                suggestions.append(result["pizza"])
+                last_built = result["pizza"]
+                suggestions.append(last_built)
 
             function_results.append({
                 "type": "function_result",
@@ -749,17 +763,35 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 "result": [{"type": "text", "text": json.dumps(result)}],
             })
 
-        interaction = _genai_client.interactions.create(
-            model=GEMINI_MODEL,
-            previous_interaction_id=getattr(interaction, "id", None),
-            input=function_results,
-            tools=tool_declarations,
-            store=True,
-        )
+        # If a pizza was successfully validated, ask for a final natural-language
+        # answer without tools. This removes the main source of long/looping calls.
+        if last_built:
+            final_system = system + "\nA validated pizza is already available. Do not call any tools. Summarize the pizza and invite the user to customize or add it to cart."
+            interaction = create_turn(
+                function_results,
+                previous_id=getattr(interaction, "id", None),
+                tools=[],
+                prompt_system=final_system,
+            )
+        else:
+            interaction = create_turn(
+                function_results,
+                previous_id=getattr(interaction, "id", None),
+                tools=tool_declarations,
+            )
 
+    # Never show the user a dead-end error when we already have a valid pizza.
+    if last_built:
+        p = last_built
+        return {
+            "reply": f"I found a match: **{p['name']}** at **${p['total_price']:.2f}**. You can review and customize it below before adding it to your cart.",
+            "suggestions": [last_built],
+            "trace": trace,
+            "interaction_id": getattr(interaction, "id", None),
+        }
     return {
-        "reply": "I got a little stuck while building that. Try describing the pizza again in a simpler way.",
-        "suggestions": suggestions,
+        "reply": "I couldn't complete that request quickly enough. Try a shorter request such as ‘spicy under $18’ and I'll build it for you.",
+        "suggestions": [],
         "trace": trace,
         "interaction_id": getattr(interaction, "id", None),
     }
