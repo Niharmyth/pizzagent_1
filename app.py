@@ -14,6 +14,7 @@ Run:
 Opens at http://0.0.0.0:PORT (see PORT constant below).
 """
 
+import json
 import math
 import os
 import random
@@ -37,7 +38,7 @@ from rag import retrieve_context, rag_status
 # HAND-EDITABLE CONSTANTS
 # ============================================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 GEMINI_INIT_ERROR = None
 AGENT_NAME = "Pizzomania"
 PORT = 8083
@@ -319,15 +320,22 @@ def gemini_delivery_message(cart_summary, fulfilment, store, distance_km, can_fu
 
     if GEMINI_ENABLED and _genai_client is not None:
         try:
-            response = _genai_client.models.generate_content(
-                model=GEMINI_MODEL, contents=prompt_text
+            interaction = _genai_client.interactions.create(
+                model=GEMINI_MODEL,
+                input=prompt_text,
+                system_instruction=(
+                    "You are the Pizzomania delivery assistant. Return only a short, warm, "
+                    "plain-language confirmation. Never invent delivery eligibility, prices, "
+                    "distances or store facts; use only the facts provided in the user input."
+                ),
+                store=False,
             )
-            text = (response.text or "").strip()
+            text = (getattr(interaction, "output_text", "") or "").strip()
             if text:
-                record_agent_event("Delivery Agent", "LLM response", "Gemini generated the delivery/pickup message.")
-                return text, "gemini"
+                record_agent_event("Delivery Agent", "LLM response", "Gemini Interactions API generated the delivery/pickup message.")
+                return text, "gemini-interactions"
         except Exception as exc:
-            record_agent_event("Delivery Agent", "LLM fallback", f"Gemini call failed; deterministic message used: {exc}")
+            record_agent_event("Delivery Agent", "LLM fallback", f"Gemini Interactions API failed; deterministic message used: {exc}")
 
     if fulfilment == "pickup":
         msg = (f"You're all set! Head to {store['name']} at {store['address']} and "
@@ -616,49 +624,145 @@ def _fallback_agent(message, history=None, context=None):
     return {"reply":f"I'd start with **{best['name']}** — it fits {why}. You can customize it before it reaches your cart.","suggestions":picks,"trace":trace}
 
 
-def _gemini_agent(message, history, context):
-    from google.genai import types
-    declarations=[]
-    for schema in _tool_schemas():
-        declarations.append(types.FunctionDeclaration(name=schema["name"], description=schema["description"], parameters_json_schema=schema["parameters"]))
-    tool=types.Tool(function_declarations=declarations)
+def _gemini_tool_declarations():
+    """Return Interactions API function declarations in the current schema."""
+    return [
+        {
+            "type": "function",
+            "name": schema["name"],
+            "description": schema["description"],
+            "parameters": schema["parameters"],
+        }
+        for schema in _tool_schemas()
+    ]
+
+
+def _interaction_text(interaction):
+    return (getattr(interaction, "output_text", "") or "").strip()
+
+
+def _interaction_steps(interaction):
+    return list(getattr(interaction, "steps", None) or [])
+
+
+def _gemini_agent(message, history, context, interaction_id=None):
+    """Run Pizzomania AI through Google's current Interactions API."""
     rag = retrieve_context(message, top_k=4)
     record_agent_event("Pizza AI", "RAG retrieval", f"Retrieved {len(rag['chunks'])} knowledge chunks.")
-    system = ("You are Pizzomania AI, a concise pizza ordering co-pilot. Help the user build a pizza. "
-              "Use tools for authoritative menu, configuration, delivery and order facts. Never invent products, toppings, prices, calories, delivery eligibility or order status. "
-              "Do not reveal hidden reasoning or chain-of-thought. Return friendly concise answers. "
-              "When a user wants a pizza, use search_menu then build_pizza to validate a concrete suggestion. "
-              "A pizza proposal is only a suggestion until the user approves it. "
-              "Use the retrieved knowledge only as supporting context; authoritative menu/pricing/order facts come from tools.\n\n"
-              f"RETRIEVED KNOWLEDGE:\n{rag['context']}")
-    contents=[]
-    for turn in (history or [])[-8:]:
-        role="model" if turn.get("role") in ("assistant","model") else "user"
-        contents.append(types.Content(role=role, parts=[types.Part.from_text(text=str(turn.get("content", "")))]))
-    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"Current context: {context or {}}\nUser: {message}")]))
-    trace=[]; suggestions=[]
+
+    system = (
+        "You are Pizzomania AI, a concise pizza ordering co-pilot. Help the user build "
+        "a pizza and complete ordering tasks. Use tools for authoritative menu, "
+        "configuration, delivery and order facts. Never invent products, toppings, "
+        "prices, calories, delivery eligibility or order status. Do not reveal hidden "
+        "reasoning or chain-of-thought. Return friendly concise answers. "
+        "When a user wants a pizza, use search_menu then build_pizza to validate a "
+        "concrete suggestion. A pizza proposal is only a suggestion until the user "
+        "approves it. Use retrieved knowledge only as supporting context; authoritative "
+        "menu/pricing/order facts come from tools.\n\n"
+        f"RETRIEVED KNOWLEDGE:\n{rag['context']}\n\n"
+        f"CURRENT APP CONTEXT:\n{context or {}}"
+    )
+
+    tool_declarations = _gemini_tool_declarations()
+    trace = []
+    suggestions = []
+
+    if interaction_id:
+        interaction = _genai_client.interactions.create(
+            model=GEMINI_MODEL,
+            previous_interaction_id=interaction_id,
+            input=message,
+            tools=tool_declarations,
+            store=True,
+        )
+    else:
+        history_text = ""
+        if history:
+            compact = history[-8:]
+            history_text = "\nCONVERSATION SO FAR:\n" + "\n".join(
+                f"{t.get('role','user').upper()}: {t.get('content','')}" for t in compact
+            )
+        prompt = f"{history_text}\n\nUSER:\n{message}".strip()
+        interaction = _genai_client.interactions.create(
+            model=GEMINI_MODEL,
+            input=prompt,
+            tools=tool_declarations,
+            system_instruction=system,
+            store=True,
+        )
+
     for _ in range(AGENT_MAX_ROUNDS):
-        response=_genai_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=types.GenerateContentConfig(tools=[tool], temperature=0.4, system_instruction=system))
-        candidate=response.candidates[0]
-        parts=candidate.content.parts
-        calls=[part.function_call for part in parts if getattr(part, "function_call", None)]
+        calls = [
+            step for step in _interaction_steps(interaction)
+            if getattr(step, "type", None) == "function_call"
+        ]
         if not calls:
-            text=(response.text or "").strip()
-            return {"reply": text or "I can help you build a pizza.", "suggestions": suggestions, "trace": trace}
-        contents.append(candidate.content)
+            text = _interaction_text(interaction)
+            return {
+                "reply": text or "I can help you build a pizza.",
+                "suggestions": suggestions,
+                "trace": trace,
+                "interaction_id": getattr(interaction, "id", None),
+            }
+
+        function_results = []
         for call in calls:
-            name=call.name; args=dict(call.args or {})
-            fn=_agent_tools().get(name)
+            name = getattr(call, "name", "")
+            args = getattr(call, "arguments", {}) or {}
+            fn = _agent_tools().get(name)
             if not fn:
-                result={"ok":False,"error":"Unknown tool."}
+                result = {"ok": False, "error": "Unknown tool."}
             else:
-                try: result=fn(**args)
-                except Exception as exc: result={"ok":False,"error":str(exc)}
-            trace.append({"label": {"search_menu":"Checking the menu","build_pizza":"Validating your pizza","check_delivery_range":"Checking delivery range","check_order_status":"Checking your order"}.get(name, "Checking"), "tool": name})
-            record_agent_event({"search_menu":"Menu Agent","build_pizza":"Pizza Builder","check_delivery_range":"Delivery Agent","check_order_status":"Order Agent"}.get(name,"Pizza AI"), "Tool call", f"{name} executed.", name)
-            if name=="build_pizza" and result.get("ok"): suggestions.append(result["pizza"])
-            contents.append(types.Content(role="user", parts=[types.Part.from_function_response(name=name, response={"result": result})]))
-    return {"reply":"I got a little stuck while building that. Try describing the pizza again in a simpler way.","suggestions":suggestions,"trace":trace}
+                try:
+                    result = fn(**dict(args))
+                except Exception as exc:
+                    result = {"ok": False, "error": str(exc)}
+
+            trace.append({
+                "label": {
+                    "search_menu": "Checking the menu",
+                    "build_pizza": "Validating your pizza",
+                    "check_delivery_range": "Checking delivery range",
+                    "check_order_status": "Checking your order",
+                }.get(name, "Checking"),
+                "tool": name,
+            })
+            record_agent_event(
+                {
+                    "search_menu": "Menu Agent",
+                    "build_pizza": "Pizza Builder",
+                    "check_delivery_range": "Delivery Agent",
+                    "check_order_status": "Order Agent",
+                }.get(name, "Pizza AI"),
+                "Tool call",
+                f"{name} executed.",
+                name,
+            )
+            if name == "build_pizza" and result.get("ok"):
+                suggestions.append(result["pizza"])
+
+            function_results.append({
+                "type": "function_result",
+                "name": name,
+                "call_id": getattr(call, "id", None),
+                "result": [{"type": "text", "text": json.dumps(result)}],
+            })
+
+        interaction = _genai_client.interactions.create(
+            model=GEMINI_MODEL,
+            previous_interaction_id=getattr(interaction, "id", None),
+            input=function_results,
+            tools=tool_declarations,
+            store=True,
+        )
+
+    return {
+        "reply": "I got a little stuck while building that. Try describing the pizza again in a simpler way.",
+        "suggestions": suggestions,
+        "trace": trace,
+        "interaction_id": getattr(interaction, "id", None),
+    }
 
 
 @app.route("/api/agent/ask", methods=["POST"])
@@ -668,9 +772,10 @@ def api_agent_ask():
     if not message: return jsonify({"ok":False,"error":"Tell me what you're craving."}),400
     history=data.get("history") or []
     context=data.get("context") or {}
+    interaction_id=(data.get("interaction_id") or "").strip() or None
     try:
         if GEMINI_ENABLED and _genai_client is not None:
-            result=_gemini_agent(message, history, context); mode="gemini"
+            result=_gemini_agent(message, history, context, interaction_id); mode="gemini-interactions"
         else:
             result=_fallback_agent(message, history, context); mode=("deterministic-no-key" if not GEMINI_ENABLED else "deterministic-gemini-error")
         return jsonify({"ok":True,"mode":mode,**result})
@@ -693,7 +798,7 @@ def admin_page():
 def api_ai_status():
     return jsonify({
         "ok": True, "gemini_configured": bool(GEMINI_API_KEY), "gemini_enabled": GEMINI_ENABLED,
-        "model": GEMINI_MODEL, "sdk_loaded": _genai_client is not None,
+        "model": GEMINI_MODEL, "api": "Interactions API", "sdk_loaded": _genai_client is not None,
         "init_error": GEMINI_INIT_ERROR, "rag": rag_status(),
     })
 
@@ -711,7 +816,7 @@ def api_admin_overview():
             {"id":"kitchen","name":"Kitchen Flow","role":"Drives the preparation/status visualization","tools":["_order_status"]},
         ],
         "events": list(reversed(AGENT_EVENTS[-40:])),
-        "ai": {"gemini_configured":bool(GEMINI_API_KEY),"gemini_enabled":GEMINI_ENABLED,"model":GEMINI_MODEL,"init_error":GEMINI_INIT_ERROR},
+        "ai": {"gemini_configured":bool(GEMINI_API_KEY),"gemini_enabled":GEMINI_ENABLED,"model":GEMINI_MODEL,"api":"Interactions API","init_error":GEMINI_INIT_ERROR},
         "rag": rag_status(),
     })
 

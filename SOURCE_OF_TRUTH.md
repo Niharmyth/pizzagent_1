@@ -63,3 +63,12 @@ python scripts/verify_pizzomania.py
 ```
 
 GitHub Actions runs the same checks on pushes and pull requests.
+
+
+## Gemini API baseline
+
+- The canonical agent integration uses Google's **Interactions API**.
+- Default model: `gemini-3.6-flash`.
+- Do not revert to `models.generate_content` or `gemini-2.5-flash` for the agent without a deliberate migration decision.
+- Keep `google-genai>=2.0.0`.
+- The server remains authoritative for menu, pricing, calories, delivery eligibility, and order status.

@@ -792,7 +792,7 @@ document.addEventListener('keydown', (e) => {
 (async function init(){ await loadMenu(); await loadStores(); await loadDeals(); await refreshCartFromServer(); })();
 
 /* ---------------- PIZZOMANIA AI — PHASE 1 ---------------- */
-let AI_HISTORY = [];
+let AI_HISTORY = []; let AI_INTERACTION_ID = null;
 let AI_LAST_SUGGESTIONS = [];
 
 function aiFormat(text=''){
@@ -846,7 +846,7 @@ function aiRenderSuggestions(suggestions=[]){
   chat.scrollTop=chat.scrollHeight;
 }
 function aiReset(){
-  AI_HISTORY=[]; AI_LAST_SUGGESTIONS=[];
+  AI_HISTORY=[]; AI_INTERACTION_ID=null; AI_LAST_SUGGESTIONS=[];
   $('#aiChat').innerHTML='';
   $('#aiActivity').hidden=true; $('#aiActivity').innerHTML='';
   aiAddMessage('assistant','👋 Hey! I\'m your pizza co-pilot. Tell me what you\'re craving — for example, “spicy and cheesy under $18” or “vegetarian for the family.”');
@@ -869,9 +869,11 @@ async function sendAIMessage(){
   try{
     const r=await api('/api/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       message,
-      history:AI_HISTORY.slice(0,-1).slice(-8),
+      history:AI_INTERACTION_ID ? [] : AI_HISTORY.slice(0,-1).slice(-8),
+      interaction_id:AI_INTERACTION_ID,
       context:{page:'build-pizza',cart:CART.map(x=>({pizza_id:x.pizza_id,name:x.name,qty:x.qty})),fulfilment:FULFILMENT,lastProposal:AI_LAST_SUGGESTIONS[0]||null}
     })});
+    if(r.interaction_id) AI_INTERACTION_ID=r.interaction_id;
     aiSetActivity(r.trace||[]);
     aiAddMessage('assistant',r.reply||'I can help you build a pizza.');
     AI_HISTORY.push({role:'assistant',content:r.reply||''});

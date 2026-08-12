@@ -1,8 +1,8 @@
 {
-  "version": "7.0.0",
-  "codename": "Pizzomania AI + RAG + Admin",
-  "baseline": "V6 canonical + responsive fixes + RAG + standalone live flow + admin",
+  "version": "8.0.0",
+  "codename": "Pizzomania Gemini Interactions API",
+  "baseline": "V7 canonical + Gemini Interactions API migration",
   "status": "canonical",
   "source_of_truth": "main",
-  "notes": "Canonical V7 baseline. Future work must start from pushed main."
+  "notes": "Gemini agent migrated from generateContent to the current Interactions API with gemini-3.6-flash default. Tool calls remain server-validated."
 }
