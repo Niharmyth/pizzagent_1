@@ -1,0 +1,32 @@
+[
+  {
+    "query": "Is delivery free for orders over 30 dollars?",
+    "relevant": [{"source": "delivery_and_stores.md", "chunk": 1}],
+    "expected_answer": "Delivery is free for orders of $30 or more."
+  },
+  {
+    "query": "Which pizzas are vegetarian?",
+    "relevant": [{"source": "menu_and_dietary.md", "chunk": 1}],
+    "expected_answer": "Pizzomania has vegetarian pizza choices."
+  },
+  {
+    "query": "Which pizzas are vegan?",
+    "relevant": [{"source": "menu_and_dietary.md", "chunk": 2}],
+    "expected_answer": "Pizzomania has vegan pizza choices."
+  },
+  {
+    "query": "How does Pizzomania AI work?",
+    "relevant": [{"source": "brand_and_ai.md", "chunk": 1}],
+    "expected_answer": "Pizzomania AI uses agents and tools to help customers order pizzas."
+  },
+  {
+    "query": "Can I check delivery range?",
+    "relevant": [{"source": "delivery_and_stores.md", "chunk": 2}],
+    "expected_answer": "Pizzomania checks the address against its delivery range."
+  },
+  {
+    "query": "Does Pizzomania have dietary information?",
+    "relevant": [{"source": "menu_and_dietary.md", "chunk": 1}],
+    "expected_answer": "Menu information includes dietary classifications."
+  }
+]
