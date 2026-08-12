@@ -25,11 +25,20 @@ from urllib.parse import quote
 
 import requests
 from flask import Flask, jsonify, render_template, request, session
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+from rag import retrieve_context, rag_status
 
 # ============================================================
 # HAND-EDITABLE CONSTANTS
 # ============================================================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_INIT_ERROR = None
 AGENT_NAME = "Pizzomania"
 PORT = 8083
 # ============================================================
@@ -43,9 +52,10 @@ if GEMINI_ENABLED:
     try:
         from google import genai
         _genai_client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception:
+    except Exception as exc:
         GEMINI_ENABLED = False
         _genai_client = None
+        GEMINI_INIT_ERROR = str(exc)
 
 # ------------------------------------------------------------
 # IMAGES
@@ -201,6 +211,11 @@ DEALS = [
 
 # Demo-only server-side order registry. Replace with a database for production.
 ORDERS_BY_NUMBER = {}
+AGENT_EVENTS = []
+
+def record_agent_event(agent, event, detail, tool=None):
+    AGENT_EVENTS.append({"time": datetime.now(timezone.utc).isoformat(), "agent": agent, "event": event, "detail": detail, "tool": tool})
+    del AGENT_EVENTS[:-100]
 
 # ------------------------------------------------------------
 # HELPERS
@@ -305,13 +320,14 @@ def gemini_delivery_message(cart_summary, fulfilment, store, distance_km, can_fu
     if GEMINI_ENABLED and _genai_client is not None:
         try:
             response = _genai_client.models.generate_content(
-                model="gemini-2.5-flash", contents=prompt_text
+                model=GEMINI_MODEL, contents=prompt_text
             )
             text = (response.text or "").strip()
             if text:
+                record_agent_event("Delivery Agent", "LLM response", "Gemini generated the delivery/pickup message.")
                 return text, "gemini"
-        except Exception:
-            pass  # fall through to deterministic message
+        except Exception as exc:
+            record_agent_event("Delivery Agent", "LLM fallback", f"Gemini call failed; deterministic message used: {exc}")
 
     if fulfilment == "pickup":
         msg = (f"You're all set! Head to {store['name']} at {store['address']} and "
@@ -323,7 +339,7 @@ def gemini_delivery_message(cart_summary, fulfilment, store, distance_km, can_fu
         msg = (f"We're sorry, {store['name']} is {distance_km}km away, which is past our "
                f"20km delivery limit. We can't deliver this time, but you're welcome to "
                f"pick up your order from {store['name']} at {store['address']} instead.")
-    return msg, "deterministic"
+    return msg, ("deterministic-no-key" if not GEMINI_ENABLED else "deterministic-gemini-error")
 
 
 def make_order_number():
@@ -357,7 +373,7 @@ def search_menu(query="", tags=None, max_price=None, max_cal=None):
         if max_cal is not None and p["base_cal"] > int(max_cal):
             continue
         results.append({
-            "id": p["id"], "name": p["name"], "description": p["description"],
+            "id": p["id"], "category": p["category"], "name": p["name"], "description": p["description"],
             "base_price": p["base_price"], "base_cal": p["base_cal"],
             "tags": p["tags"], "image": p["image"], "rating": p.get("rating"), "reviews": p.get("reviews")
         })
@@ -486,48 +502,118 @@ def _tool_schemas():
     ]
 
 
-def _fallback_agent(message):
-    """Useful no-key demo mode. It never invents a price; all results come from tools."""
+def _fallback_agent(message, history=None, context=None):
+    """Useful no-key demo mode. Parses common intent instead of returning a fixed default."""
     text = _normalise(message)
     tools = _agent_tools()
     trace = []
+    record_agent_event("Pizza AI", "Fallback analysis", f"Parsed user request: {message}")
+
     if re.search(r"\bpm[- ]?\d{6}\b", text):
         order_no = re.search(r"\bpm[- ]?\d{6}\b", text).group(0).upper().replace(" ", "-")
         result = tools["check_order_status"](order_no)
         trace.append({"label": "Checking your order", "tool": "check_order_status"})
+        record_agent_event("Order Agent", "Order lookup", order_no, "check_order_status")
         if result.get("found"):
             return {"reply": f"Your order {order_no} is currently **{result['status']}** at {result['store']}.", "suggestions": [], "trace": trace}
         return {"reply": result["error"], "suggestions": [], "trace": trace}
 
+    last_proposal=(context or {}).get("lastProposal") or {}
+    if last_proposal and any(x in text for x in ("spicier", "more spicy", "hotter", "extra cheese", "more cheese", "remove mushroom", "without mushroom", "no mushroom")):
+        toppings=list(last_proposal.get("toppings") or [])
+        if any(x in text for x in ("spicier", "more spicy", "hotter")) and "Jalapenos" not in toppings:
+            toppings.append("Jalapenos")
+        if any(x in text for x in ("extra cheese", "more cheese")) and "Extra Vegan Cheese" not in toppings:
+            toppings.append("Extra Vegan Cheese")
+        if any(x in text for x in ("remove mushroom", "without mushroom", "no mushroom")):
+            toppings=[t for t in toppings if t != "Mushroom"]
+        built=tools["build_pizza"](last_proposal.get("id"), size=last_proposal.get("size"), crust=last_proposal.get("crust"), toppings=toppings, qty=last_proposal.get("qty",1))
+        trace.append({"label":"Updating your pizza","tool":"build_pizza"})
+        if built.get("ok"):
+            p=built["pizza"]
+            record_agent_event("Pizza Builder", "Follow-up modification", p["name"], "build_pizza")
+            return {"reply":f"Done — I updated **{p['name']}** based on your last pizza. You can review the new configuration below.","suggestions":[p],"trace":trace}
+
     max_price = None
-    m = re.search(r"(?:under|below|less than|up to)\s*\$?\s*(\d+(?:\.\d+)?)", text)
+    m = re.search(r"(?:under|below|less than|up to|budget(?: of)?)\s*\$?\s*(\d+(?:\.\d+)?)", text)
     if m: max_price = float(m.group(1))
     max_cal = None
     m = re.search(r"(?:under|below|less than|up to)\s*(\d+)\s*(?:cal|calories)", text)
     if m: max_cal = int(m.group(1))
+
     tags=[]
     if "vegan" in text: tags.append("vegan")
-    if "vegetarian" in text: tags.append("vegetarian")
-    query = ""
-    for token in ["spicy", "mushroom", "pepperoni", "chicken", "margherita", "veggie", "bbq", "falafel"]:
-        if token in text: query = token; break
+    elif "vegetarian" in text or "veggie" in text: tags.append("vegetarian")
+
+    # Map conversational intent to menu terms.
+    intent_terms = [
+        ("spicy", "spicy"), ("hot", "spicy"), ("inferno", "inferno"),
+        ("pepperoni", "pepperoni"), ("mushroom", "mushroom"),
+        ("chicken", "chicken"), ("bbq", "bbq"), ("barbecue", "bbq"),
+        ("margherita", "margherita"), ("falafel", "falafel"),
+        ("cheesy", ""), ("cheese", ""), ("loaded", "supreme"),
+    ]
+    query = next((term for word, term in intent_terms if word in text), "")
+
+    # Search broadly when the natural-language query is descriptive rather than a product name.
     result = tools["search_menu"](query=query, tags=tags, max_price=max_price, max_cal=max_cal)
     trace.append({"label": "Checking the menu", "tool": "search_menu"})
+    record_agent_event("Menu Agent", "Menu search", f"Found {result['count']} matching menu items.", "search_menu")
+
     matches = result["matches"]
+    if "kids" in text or "children" in text:
+        kids = [m for m in matches if m.get("category") == "kids"]
+        if kids: matches = kids
+    elif "family" in text or "group" in text or "party" in text:
+        family = [m for m in matches if m.get("category") == "family"]
+        if family: matches = family
+    if not matches and query:
+        result = tools["search_menu"](query="", tags=tags, max_price=max_price, max_cal=max_cal)
+        matches = result["matches"]
     if not matches:
         return {"reply": "I couldn't find a pizza that fits all of those requirements. Try relaxing one constraint and I'll have another look.", "suggestions": [], "trace": trace}
+
+    # Score candidates against conversational cues so the fallback is not always the first menu item.
+    def score(m):
+        hay=_normalise(m["name"]+" "+m["description"]+" "+" ".join(m["tags"]))
+        score=float(m.get("rating") or 0)
+        for word in text.split():
+            if len(word)>3 and word in hay: score += 1.5
+        if "spicy" in text and "spicy" in hay: score += 5
+        if "cheesy" in text and "cheese" in hay: score += 2
+        if "loaded" in text and any(x in hay for x in ("supreme","loaded","bbq")): score += 4
+        return score
+    matches=sorted(matches,key=score,reverse=True)[:3]
+
     picks=[]
-    for m in matches[:3]:
-        built = tools["build_pizza"](m["id"])
-        trace.append({"label": f"Checking {m['name']}", "tool": "build_pizza"})
+    requested_size = "Large" if "large" in text else None
+    requested_crust = "Thin & Crispy" if "thin" in text else ("Cauliflower (Gluten-Free)" if "gluten" in text or "gluten free" in text else "Classic")
+    topping_map={
+        "extra cheese":"Extra Vegan Cheese", "mushroom":"Mushroom", "mushrooms":"Mushroom",
+        "spinach":"Baby Spinach", "olives":"Kalamata Olives", "jalapeno":"Jalapenos",
+        "jalapenos":"Jalapenos", "basil":"Fresh Basil", "pineapple":"Pineapple",
+        "pepperoni":"Pepperoni", "chicken":"Chargrilled Chicken",
+    }
+    requested_toppings=[]
+    for phrase,topping in topping_map.items():
+        if phrase in text and topping not in requested_toppings: requested_toppings.append(topping)
+    for m in matches:
+        built=tools["build_pizza"](m["id"], size=requested_size, crust=requested_crust, toppings=requested_toppings)
+        trace.append({"label": f"Validating {m['name']}", "tool":"build_pizza"})
+        record_agent_event("Pizza Builder", "Configuration validated", m["name"], "build_pizza")
         if built.get("ok"): picks.append(built["pizza"])
+    if not picks:
+        return {"reply":"I found menu matches, but couldn't validate a configuration. Try another request.","suggestions":[],"trace":trace}
+
     best=picks[0]
     reason=[]
     if tags: reason.append("your dietary preference")
     if max_price is not None: reason.append(f"your ${max_price:.0f} budget")
     if max_cal is not None: reason.append(f"your {max_cal} calorie limit")
-    why = " and ".join(reason) if reason else "what you described"
-    return {"reply": f"I'd start with **{best['name']}** — it fits {why}. You can customize it before it reaches your cart.", "suggestions": picks, "trace": trace}
+    if "spicy" in text: reason.append("your spicy craving")
+    if "cheesy" in text: reason.append("your cheesy craving")
+    why=" and ".join(reason) if reason else "what you described"
+    return {"reply":f"I'd start with **{best['name']}** — it fits {why}. You can customize it before it reaches your cart.","suggestions":picks,"trace":trace}
 
 
 def _gemini_agent(message, history, context):
@@ -536,11 +622,15 @@ def _gemini_agent(message, history, context):
     for schema in _tool_schemas():
         declarations.append(types.FunctionDeclaration(name=schema["name"], description=schema["description"], parameters_json_schema=schema["parameters"]))
     tool=types.Tool(function_declarations=declarations)
+    rag = retrieve_context(message, top_k=4)
+    record_agent_event("Pizza AI", "RAG retrieval", f"Retrieved {len(rag['chunks'])} knowledge chunks.")
     system = ("You are Pizzomania AI, a concise pizza ordering co-pilot. Help the user build a pizza. "
               "Use tools for authoritative menu, configuration, delivery and order facts. Never invent products, toppings, prices, calories, delivery eligibility or order status. "
               "Do not reveal hidden reasoning or chain-of-thought. Return friendly concise answers. "
               "When a user wants a pizza, use search_menu then build_pizza to validate a concrete suggestion. "
-              "A pizza proposal is only a suggestion until the user approves it.")
+              "A pizza proposal is only a suggestion until the user approves it. "
+              "Use the retrieved knowledge only as supporting context; authoritative menu/pricing/order facts come from tools.\n\n"
+              f"RETRIEVED KNOWLEDGE:\n{rag['context']}")
     contents=[]
     for turn in (history or [])[-8:]:
         role="model" if turn.get("role") in ("assistant","model") else "user"
@@ -548,7 +638,7 @@ def _gemini_agent(message, history, context):
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=f"Current context: {context or {}}\nUser: {message}")]))
     trace=[]; suggestions=[]
     for _ in range(AGENT_MAX_ROUNDS):
-        response=_genai_client.models.generate_content(model="gemini-2.5-flash", contents=contents, config=types.GenerateContentConfig(tools=[tool], temperature=0.4, system_instruction=system))
+        response=_genai_client.models.generate_content(model=GEMINI_MODEL, contents=contents, config=types.GenerateContentConfig(tools=[tool], temperature=0.4, system_instruction=system))
         candidate=response.candidates[0]
         parts=candidate.content.parts
         calls=[part.function_call for part in parts if getattr(part, "function_call", None)]
@@ -565,6 +655,7 @@ def _gemini_agent(message, history, context):
                 try: result=fn(**args)
                 except Exception as exc: result={"ok":False,"error":str(exc)}
             trace.append({"label": {"search_menu":"Checking the menu","build_pizza":"Validating your pizza","check_delivery_range":"Checking delivery range","check_order_status":"Checking your order"}.get(name, "Checking"), "tool": name})
+            record_agent_event({"search_menu":"Menu Agent","build_pizza":"Pizza Builder","check_delivery_range":"Delivery Agent","check_order_status":"Order Agent"}.get(name,"Pizza AI"), "Tool call", f"{name} executed.", name)
             if name=="build_pizza" and result.get("ok"): suggestions.append(result["pizza"])
             contents.append(types.Content(role="user", parts=[types.Part.from_function_response(name=name, response={"result": result})]))
     return {"reply":"I got a little stuck while building that. Try describing the pizza again in a simpler way.","suggestions":suggestions,"trace":trace}
@@ -581,15 +672,49 @@ def api_agent_ask():
         if GEMINI_ENABLED and _genai_client is not None:
             result=_gemini_agent(message, history, context); mode="gemini"
         else:
-            result=_fallback_agent(message); mode="deterministic"
+            result=_fallback_agent(message, history, context); mode=("deterministic-no-key" if not GEMINI_ENABLED else "deterministic-gemini-error")
         return jsonify({"ok":True,"mode":mode,**result})
     except Exception as exc:
-        fallback=_fallback_agent(message)
+        fallback=_fallback_agent(message, history, context)
         return jsonify({"ok":True,"mode":"deterministic-fallback","warning":str(exc),**fallback})
 
 # ------------------------------------------------------------
 # ROUTES
 # ------------------------------------------------------------
+@app.route("/agent-flow", methods=["GET"])
+def agent_flow_page():
+    return render_template("agent_flow.html", agent_name=AGENT_NAME)
+
+@app.route("/admin", methods=["GET"])
+def admin_page():
+    return render_template("admin.html", agent_name=AGENT_NAME)
+
+@app.route("/api/ai/status", methods=["GET"])
+def api_ai_status():
+    return jsonify({
+        "ok": True, "gemini_configured": bool(GEMINI_API_KEY), "gemini_enabled": GEMINI_ENABLED,
+        "model": GEMINI_MODEL, "sdk_loaded": _genai_client is not None,
+        "init_error": GEMINI_INIT_ERROR, "rag": rag_status(),
+    })
+
+@app.route("/api/admin/overview", methods=["GET"])
+def api_admin_overview():
+    return jsonify({
+        "ok": True,
+        "agents": [
+            {"id":"pizza_ai","name":"Pizzomania AI","role":"Intent + conversation orchestration","status":"active"},
+            {"id":"menu_agent","name":"Menu Agent","role":"Searches authoritative menu and dietary/price constraints","tools":["search_menu"]},
+            {"id":"pizza_builder","name":"Pizza Builder","role":"Builds and server-validates pizza configurations","tools":["build_pizza"]},
+            {"id":"delivery_agent","name":"Delivery Agent","role":"Checks address, nearest kitchen and delivery eligibility","tools":["check_delivery_range"]},
+            {"id":"order_agent","name":"Order Agent","role":"Tracks session-owned orders and order status","tools":["check_order_status"]},
+            {"id":"rag_agent","name":"Knowledge / RAG","role":"Retrieves supporting Pizzomania knowledge before generation","tools":["retrieve_context"]},
+            {"id":"kitchen","name":"Kitchen Flow","role":"Drives the preparation/status visualization","tools":["_order_status"]},
+        ],
+        "events": list(reversed(AGENT_EVENTS[-40:])),
+        "ai": {"gemini_configured":bool(GEMINI_API_KEY),"gemini_enabled":GEMINI_ENABLED,"model":GEMINI_MODEL,"init_error":GEMINI_INIT_ERROR},
+        "rag": rag_status(),
+    })
+
 @app.route("/")
 def index():
     return render_template("index.html", agent_name=AGENT_NAME, hero_image=HERO_IMAGE)
@@ -675,6 +800,14 @@ def api_cart_clear():
     return jsonify({"ok": True, "cart": [], "subtotal": 0})
 
 
+@app.route("/api/address/autocomplete", methods=["GET"])
+def api_address_autocomplete():
+    query=(request.args.get("q") or "").strip()
+    if len(query)<3:
+        return jsonify({"ok":True,"results":[]})
+    results, used_fallback=geocode_address(query)
+    return jsonify({"ok":True,"fallback":used_fallback,"results":results[:5]})
+
 @app.route("/api/address/lookup", methods=["POST"])
 def api_address_lookup():
     data = request.get_json(force=True) or {}
@@ -729,12 +862,14 @@ def api_order_process():
     }]
 
     try:
+        record_agent_event("Order Agent", "Order planning", f"{fulfilment} order with subtotal ${subtotal:.2f}.")
         if fulfilment == "pickup":
             store = next((s for s in STORES if s["id"] == store_id), None)
             if store is None:
                 return jsonify({"ok": False, "error": "Please choose a store."}), 400
             distance_km = 0.0
             can_fulfil = True
+            record_agent_event("Delivery Agent", "Kitchen lookup", f"Nearest kitchen {store['name']} at {distance_km}km.", "check_delivery_range")
             steps.append({
                 "step": 2, "title": "TOOL USE",
                 "detail": f"Pickup selected directly at {store['name']} — no address lookup needed.",
@@ -759,8 +894,8 @@ def api_order_process():
         steps.append({
             "step": 3, "title": "REASON",
             "detail": (
-                f"Sent the order summary, nearest kitchen and distance to Gemini "
-                f"({'live call' if mode == 'gemini' else 'deterministic demo mode — no API key configured'}) "
+                f"Sent the order summary, nearest kitchen and distance to the language model "
+                f"({'live Gemini call' if mode == 'gemini' else 'deterministic fallback — Gemini is not configured' if mode == 'deterministic-no-key' else 'deterministic fallback — Gemini call failed; see Admin for diagnostics'}) "
                 f"and asked for a plain-language delivery/pickup message."
             ),
         })
@@ -784,6 +919,7 @@ def api_order_process():
                 "owner_id": _ensure_order_owner(),
             }
             ORDERS_BY_NUMBER[order["order_number"]] = order
+            record_agent_event("Kitchen", "Order created", f"{order['order_number']} routed to {store['name']}.")
             session["last_order_number"] = order["order_number"]
             session["cart"] = []  # order placed, clear the cart
 

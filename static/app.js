@@ -55,9 +55,11 @@ function setAgentFlow(stage, detail=null){
     node.classList.toggle('done', n < idx);
   });
   const copy = AI_FLOW_COPY[stage];
-  $('#aiFlowStatus').textContent = copy[0];
-  $('#aiFlowDetail').textContent = detail || copy[1];
-  $('#aiFlowEvent').innerHTML = `<span>LIVE EVENT</span><b>${esc(detail || copy[1])}</b>`;
+  const statusEl=$('#aiFlowStatus'), detailEl=$('#aiFlowDetail'), eventEl=$('#aiFlowEvent');
+  if(statusEl) statusEl.textContent = copy[0];
+  if(detailEl) detailEl.textContent = detail || copy[1];
+  if(eventEl) eventEl.innerHTML = `<span>LIVE EVENT</span><b>${esc(detail || copy[1])}</b>`;
+  localStorage.setItem('pizzomania_flow_event', JSON.stringify({stage, detail:detail || copy[1], time:Date.now()}));
   flowPacketTo(stage);
   pushFlowHistory(stage, detail);
 }
@@ -69,15 +71,16 @@ function startAgentFlowDemo(){
   if(packet){ packet.classList.remove('running'); packet.style.left='6%'; }
   let i = 0;
   setAgentFlow(AI_FLOW_STAGES[0], 'Customer selects a pizza or tells Pizzomania AI what they want.');
-  $('#playAiFlowBtn').disabled = true;
-  $('#playAiFlowBtn').textContent = '● Demo running';
+  const playBtn=$('#playAiFlowBtn');
+  if(!playBtn) return;
+  playBtn.disabled = true;
+  playBtn.textContent = '● Demo running';
   AI_FLOW_TIMER = setInterval(() => {
     i += 1;
     if(i >= AI_FLOW_STAGES.length){
       clearInterval(AI_FLOW_TIMER);
       setAgentFlow('ready', 'Pizza journey complete — ready for pickup or delivery.');
-      $('#playAiFlowBtn').disabled = false;
-      $('#playAiFlowBtn').textContent = '↻ Play again';
+      const btn=$('#playAiFlowBtn'); if(btn){btn.disabled = false; btn.textContent = '↻ Play again';}
       return;
     }
     const demoCopy = {
@@ -97,8 +100,7 @@ function resetAgentFlow(){
   const packet = $('#flowPacket');
   if(packet){ packet.classList.remove('running','pulse'); packet.style.left='6%'; }
   setAgentFlow('customer', 'Waiting for a customer to start an order.');
-  $('#playAiFlowBtn').disabled = false;
-  $('#playAiFlowBtn').textContent = '▶ Play live demo';
+  const btn=$('#playAiFlowBtn'); if(btn){btn.disabled = false; btn.textContent = '▶ Play live demo';}
 }
 
 $('#playAiFlowBtn')?.addEventListener('click', startAgentFlowDemo);
@@ -359,6 +361,48 @@ function renderStores(){
   });
 }
 
+let ADDRESS_TIMER=null;
+let ADDRESS_REQUEST=0;
+
+function renderAddressResults(results, fallback=false){
+  const wrap=$('#addressResults');
+  if(!wrap) return;
+  wrap.innerHTML=(results||[]).map((res,i)=>`<button class="address-btn" data-i="${i}">${esc(res.label)}</button>`).join('');
+  $$('.address-btn').forEach((b,i)=>b.onclick=()=>{
+    $$('.address-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); SELECTED_ADDRESS=results[i];
+    $('#addressInput').value=results[i].label;
+    $('#addressSuggestions').hidden=true;
+    $('#addressStatus').textContent='✓ Address verified. You can place your delivery order.';
+    $('#placeOrderBtn').disabled=false;
+  });
+}
+
+async function autocompleteAddress(query){
+  const id=++ADDRESS_REQUEST;
+  if(query.length<3){ $('#addressSuggestions').hidden=true; return; }
+  try{
+    const r=await api(`/api/address/autocomplete?q=${encodeURIComponent(query)}`);
+    if(id!==ADDRESS_REQUEST) return;
+    const box=$('#addressSuggestions');
+    if(!r.results?.length){box.hidden=true;return;}
+    box.innerHTML=r.results.map((res,i)=>`<button type="button" class="address-suggestion" data-i="${i}">${esc(res.label)}</button>`).join('');
+    box.hidden=false;
+    $$('.address-suggestion').forEach((b,i)=>b.onclick=()=>{
+      const res=r.results[i]; SELECTED_ADDRESS=res; $('#addressInput').value=res.label;
+      $('#addressStatus').textContent='✓ Address selected and verified.'; $('#placeOrderBtn').disabled=false; box.hidden=true;
+      $('#addressResults').innerHTML=`<button class="address-btn active" type="button">${esc(res.label)}</button>`;
+    });
+  }catch(e){ $('#addressSuggestions').hidden=true; }
+}
+
+$('#addressInput')?.addEventListener('input',e=>{
+  SELECTED_ADDRESS=null; $('#placeOrderBtn').disabled=true; $('#addressStatus').textContent=''; $('#addressResults').innerHTML='';
+  clearTimeout(ADDRESS_TIMER); const q=e.target.value.trim(); ADDRESS_TIMER=setTimeout(()=>autocompleteAddress(q),450);
+});
+$('#addressInput')?.addEventListener('keydown',e=>{if(e.key==='Escape') $('#addressSuggestions').hidden=true;});
+document.addEventListener('click',e=>{if(!e.target.closest('.address-autocomplete')){const box=$('#addressSuggestions');if(box)box.hidden=true;}});
+
 $('#checkAddressBtn').onclick = async () => {
   const q = $('#addressInput').value.trim();
   if(!q) return toast('Enter an address first.');
@@ -367,11 +411,7 @@ $('#checkAddressBtn').onclick = async () => {
   try{
     const r = await api('/api/address/lookup', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({query:q})});
     $('#addressStatus').textContent = r.fallback ? "We couldn't verify that live — pick the closest match below:" : 'Select the correct address:';
-    $('#addressResults').innerHTML = r.results.map((res,i) => `<button class="address-btn" data-i="${i}">${esc(res.label)}</button>`).join('');
-    $$('.address-btn').forEach((b,i) => b.onclick = () => {
-      $$('.address-btn').forEach(x => x.classList.remove('active'));
-      b.classList.add('active'); SELECTED_ADDRESS = r.results[i]; $('#placeOrderBtn').disabled = false;
-    });
+    renderAddressResults(r.results, r.fallback);
   }catch(e){ $('#addressStatus').textContent = `Could not check address: ${e.message}`; }
 };
 
@@ -730,6 +770,7 @@ function handleNav(target){
 
 $$('.nav-link, .bn-btn, .cart-icon-btn, .brand[data-nav]').forEach(el => {
   el.addEventListener('click', (e) => {
+    if(!el.dataset.nav) return;
     if(el.tagName === 'A') e.preventDefault();
     handleNav(el.dataset.nav);
   });
@@ -828,8 +869,8 @@ async function sendAIMessage(){
   try{
     const r=await api('/api/agent/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       message,
-      history:AI_HISTORY.slice(-8),
-      context:{page:'build-pizza',cart:CART.map(x=>({pizza_id:x.pizza_id,name:x.name,qty:x.qty})),fulfilment:FULFILMENT}
+      history:AI_HISTORY.slice(0,-1).slice(-8),
+      context:{page:'build-pizza',cart:CART.map(x=>({pizza_id:x.pizza_id,name:x.name,qty:x.qty})),fulfilment:FULFILMENT,lastProposal:AI_LAST_SUGGESTIONS[0]||null}
     })});
     aiSetActivity(r.trace||[]);
     aiAddMessage('assistant',r.reply||'I can help you build a pizza.');

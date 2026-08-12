@@ -4,6 +4,9 @@ import re, sys
 ROOT = Path(__file__).resolve().parents[1]
 app = (ROOT / 'app.py').read_text()
 index = (ROOT / 'templates/index.html').read_text()
+flow = (ROOT / 'templates/agent_flow.html').read_text()
+admin = (ROOT / 'templates/admin.html').read_text()
+rag = (ROOT / 'rag.py').read_text()
 css = (ROOT / 'static/style.css').read_text()
 js = (ROOT / 'static/app.js').read_text()
 errors=[]
@@ -17,7 +20,11 @@ def forbid(text, pattern, label):
 need(app, 'HERO_IMAGE = "/static/images/hero-pizza.webp"', 'clean hero')
 need(index, 'images/logo-transparent.png', 'transparent logo')
 need(index, 'id="aiOpenBtn"', 'Build My Pizza AI entry point')
-need(index, 'id="playAiFlowBtn"', 'agent flow demo')
+need(flow, 'id="playAiFlowBtn"', 'standalone agent flow demo')
+need(index, 'href="/agent-flow"', 'AI Flow navigation link')
+need(admin, 'api/admin/overview', 'admin agent dashboard')
+need(rag, 'retrieve_context', 'RAG retrieval layer')
+need(app, 'retrieve_context(message', 'RAG integration into agent')
 need(js, '/api/order/status?order_number=', 'canonical order status client')
 need(app, '@app.route("/api/order/status", methods=["GET"])', 'canonical order status endpoint')
 need(app, 'order.get("owner_id") != owner', 'session-scoped order lookup')
@@ -25,6 +32,7 @@ need(app, 'delivery_fee = 0.0 if fulfilment == "pickup" else (0.0 if subtotal >=
 need(app, 'build_pizza', 'AI pizza validation tool')
 forbid(app, r'wiki_img|Wikimedia Commons|Special:FilePath', 'external pizza image dependency')
 forbid(index, r'codes aren.?t applied at checkout yet', 'stale deal copy')
+forbid(index, r'class="ai-flow-section"', 'embedded live flow on homepage')
 
 required_images = ['hero-pizza.webp','logo-transparent.png','background-pattern.png']
 for name in required_images:

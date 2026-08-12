@@ -20,6 +20,7 @@
       <button data-nav="home" class="nav-link active">Home</button>
       <button data-nav="menu" class="nav-link">Menu</button>
       <button data-nav="deals" class="nav-link">Deals</button>
+      <a href="/agent-flow" class="nav-link nav-link-anchor">AI Flow</a>
       <button data-nav="track" class="nav-link">Track Order</button>
       <button data-nav="account" class="nav-link">Account</button>
     </nav>
@@ -87,31 +88,7 @@
   </div>
 </section>
 
-<section class="ai-flow-section" id="aiFlowSection">
-  <div class="ai-flow-head">
-    <div>
-      <div class="ai-eyebrow">LIVE AGENT VISUALIZATION</div>
-      <h2>See Pizzomania AI in action</h2>
-      <p>Follow the journey from craving → AI decision → validated order → kitchen → delivery. This demo uses the same visual language as the real ordering flow.</p>
-    </div>
-    <button id="playAiFlowBtn" class="secondary-btn">▶ Play live demo</button>
-  </div>
-  <div class="ai-flow-stage" aria-live="polite">
-    <div class="ai-flow-status"><span class="live-dot"></span><strong id="aiFlowStatus">Ready for a customer</strong><span id="aiFlowDetail">Press play to watch the agentic ordering sequence.</span></div>
-    <div class="ai-flow-canvas" id="aiFlowCanvas">
-      <div class="flow-line flow-line-1"></div><div class="flow-line flow-line-2"></div><div class="flow-line flow-line-3"></div><div class="flow-line flow-line-4"></div><div class="flow-line flow-line-5"></div>
-      <div class="flow-packet" id="flowPacket" aria-hidden="true">✦</div>
-      <article class="flow-node active" data-flow-node="customer"><div class="flow-icon">👤</div><div><b>Customer</b><span>Selects a pizza or tells AI what they want</span></div><em>01</em></article>
-      <article class="flow-node" data-flow-node="agent"><div class="flow-icon">🍕</div><div><b>Pizza AI</b><span>Understands intent and builds a proposal</span></div><em>02</em></article>
-      <article class="flow-node" data-flow-node="tools"><div class="flow-icon">🧠</div><div><b>Tools + Validation</b><span>Menu, toppings, price and calories checked</span></div><em>03</em></article>
-      <article class="flow-node" data-flow-node="order"><div class="flow-icon">🛒</div><div><b>Order Agent</b><span>Approved pizza enters the real cart/order flow</span></div><em>04</em></article>
-      <article class="flow-node" data-flow-node="kitchen"><div class="flow-icon">🔥</div><div><b>Kitchen</b><span>Dough → sauce → toppings → oven</span></div><em>05</em></article>
-      <article class="flow-node" data-flow-node="ready"><div class="flow-icon">📦</div><div><b>Ready / Delivery</b><span>Order status and ETA become visible</span></div><em>06</em></article>
-    </div>
-    <div class="ai-flow-event" id="aiFlowEvent"><span>LIVE EVENT</span><b>Waiting for a customer to start an order.</b></div>
-    <div class="ai-flow-history" id="aiFlowHistory" aria-live="polite" aria-label="Agent event history"></div>
-  </div>
-</section>
+
 
 <div id="aiBackdrop" class="modal-backdrop" hidden></div>
 <div id="aiModal" class="ai-modal" hidden role="dialog" aria-modal="true" aria-labelledby="aiModalTitle">
@@ -177,7 +154,7 @@
   <div id="deliveryPanel" hidden>
     <h3>Enter your address</h3>
     <div class="address-row">
-      <input id="addressInput" type="text" placeholder="e.g. 12 Old Northern Rd, Castle Hill NSW">
+      <div class="address-autocomplete"><input id="addressInput" type="text" autocomplete="street-address" placeholder="Start typing your address…" aria-autocomplete="list" aria-controls="addressSuggestions"><div id="addressSuggestions" class="address-suggestions" role="listbox" hidden></div></div>
       <button id="checkAddressBtn" class="secondary-btn">Check address</button>
     </div>
     <div id="addressStatus" class="muted"></div>
@@ -249,7 +226,7 @@
 
 <footer class="site-footer">
   <p>{{ agent_name }} &mdash; a practice/demo agentic ordering app. Not a real pizza company.</p>
-  <p class="footer-links"><a href="#aboutSection">About us</a> &middot; <a href="#faqSection">FAQ</a></p>
+  <p class="footer-links"><a href="#aboutSection">About us</a> &middot; <a href="#faqSection">FAQ</a> &middot; <a href="/agent-flow">Live AI Flow</a> &middot; <a href="/admin">Admin</a></p>
 </footer>
 
 <!-- Bottom nav (mobile only) -->

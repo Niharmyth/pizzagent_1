@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ agent_name }} — Live Agent Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="flow-page">
+<header class="site-header"><div class="site-header-inner"><a href="/" class="brand"><img src="{{ url_for('static', filename='images/logo-transparent.png') }}" alt="{{ agent_name }}" class="brand-logo"></a><nav class="main-nav"><a href="/" class="nav-link nav-link-anchor">Home</a><a href="/agent-flow" class="nav-link nav-link-anchor active">AI Flow</a><a href="/admin" class="nav-link nav-link-anchor">Admin</a></nav></div></header>
+<main class="flow-page-main">
+  <section class="flow-hero"><div class="ai-eyebrow">LIVE AGENT VISUALIZATION</div><h1>Watch Pizzomania think, validate and deliver.</h1><p>See the customer journey, AI agents, server-side tools and kitchen status move through one live sequence.</p><button id="playAiFlowBtn" class="primary-btn">▶ Play live demo</button></section>
+  <section class="ai-flow-stage flow-stage-page" aria-live="polite">
+    <div class="ai-flow-status"><span class="live-dot"></span><strong id="aiFlowStatus">Ready for a customer</strong><span id="aiFlowDetail">Press play to watch the agentic ordering sequence.</span></div>
+    <div class="ai-flow-canvas" id="aiFlowCanvas">
+      <div class="flow-line flow-line-1"></div><div class="flow-line flow-line-2"></div><div class="flow-line flow-line-3"></div><div class="flow-line flow-line-4"></div><div class="flow-line flow-line-5"></div><div class="flow-packet" id="flowPacket" aria-hidden="true">✦</div>
+      <article class="flow-node active" data-flow-node="customer"><div class="flow-icon">👤</div><div><b>Customer</b><span>Selects a pizza or describes a craving</span></div><em>01</em></article>
+      <article class="flow-node" data-flow-node="agent"><div class="flow-icon">🍕</div><div><b>Pizza AI</b><span>Understands intent and conversation</span></div><em>02</em></article>
+      <article class="flow-node" data-flow-node="tools"><div class="flow-icon">🧠</div><div><b>Agent Tools</b><span>Menu, RAG, price and validation</span></div><em>03</em></article>
+      <article class="flow-node" data-flow-node="order"><div class="flow-icon">🛒</div><div><b>Order Agent</b><span>Approved pizza enters cart</span></div><em>04</em></article>
+      <article class="flow-node" data-flow-node="kitchen"><div class="flow-icon">🔥</div><div><b>Kitchen</b><span>Dough → sauce → toppings → oven</span></div><em>05</em></article>
+      <article class="flow-node" data-flow-node="ready"><div class="flow-icon">📦</div><div><b>Ready / Delivery</b><span>Status and ETA become visible</span></div><em>06</em></article>
+    </div>
+    <div class="ai-flow-event" id="aiFlowEvent"><span>LIVE EVENT</span><b>Waiting for a customer to start an order.</b></div>
+    <div class="ai-flow-history" id="aiFlowHistory"></div>
+  </section>
+  <section class="flow-explainer"><h2>What each agent does</h2><div class="agent-explainer-grid"><article><b>🍕 Pizzomania AI</b><p>Understands natural-language requests and decides which tools are needed.</p></article><article><b>🧠 Menu + RAG</b><p>Retrieves supporting knowledge and searches the authoritative menu.</p></article><article><b>🧮 Pizza Builder</b><p>Validates size, crust, toppings, calories and the real server-side price.</p></article><article><b>🚗 Delivery Agent</b><p>Checks the address, nearest kitchen, distance and delivery eligibility.</p></article><article><b>🛒 Order Agent</b><p>Owns the order workflow and session-scoped status lookup.</p></article><article><b>🔥 Kitchen Flow</b><p>Uses the same canonical order status to drive preparation visualization.</p></article></div></section>
+</main>
+<script>
+const stages=['customer','agent','tools','order','kitchen','ready'];
+const copy={customer:['Customer','Pizza selected','A customer chooses a pizza or tells Pizzomania AI what they want.'],agent:['Pizza AI','Understanding the craving','The AI interprets taste, budget and dietary preferences.'],tools:['Agent Tools','Validating the pizza','Menu, RAG, toppings, size, crust and authoritative price are checked.'],order:['Order Agent','Pizza approved','The approved configuration enters the existing cart/order flow.'],kitchen:['Kitchen','Pizza is being prepared','Dough, sauce, toppings and oven stages are now active.'],ready:['Delivery','Order ready','The order status and pickup/delivery ETA are available.']};
+let timer=null, history=[];
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function flowPacketTo(stage){const p=$('#flowPacket'),i=stages.indexOf(stage); if(!p||i<0)return;p.style.left=`${6+(i/(stages.length-1))*88}%`;p.classList.remove('pulse');void p.offsetWidth;p.classList.add('pulse');}
+function setStage(stage,detail){const i=stages.indexOf(stage),c=copy[stage];$$('.flow-node').forEach(n=>{const j=stages.indexOf(n.dataset.flowNode);n.classList.toggle('active',j===i);n.classList.toggle('done',j<i)});$('#aiFlowStatus').textContent=c[0];$('#aiFlowDetail').textContent=detail||c[1];$('#aiFlowEvent').innerHTML=`<span>LIVE EVENT</span><b>${detail||c[1]}</b>`;flowPacketTo(stage);history.unshift({label:c[0],detail:detail||c[1]});history=history.slice(0,6);$('#aiFlowHistory').innerHTML=history.map((x,n)=>`<span class="flow-history-item ${n===0?'latest':''}"><i>${n===0?'●':'✓'}</i><b>${x.label}</b><em>${x.detail}</em></span>`).join('');localStorage.setItem('pizzomania_flow_event',JSON.stringify({stage,detail:detail||c[1],time:Date.now()}));}
+function play(){clearInterval(timer);history=[];let i=0;setStage(stages[0],copy.customer[2]);$('#playAiFlowBtn').disabled=true;$('#playAiFlowBtn').textContent='● Demo running';timer=setInterval(()=>{i++;if(i>=stages.length){clearInterval(timer);setStage('ready','Pizza journey complete — ready for pickup or delivery.');$('#playAiFlowBtn').disabled=false;$('#playAiFlowBtn').textContent='↻ Play again';return;}setStage(stages[i],copy[stages[i]][2]);},1500)}
+$('#playAiFlowBtn').onclick=play;
+window.addEventListener('storage',e=>{if(e.key==='pizzomania_flow_event'&&e.newValue){try{const x=JSON.parse(e.newValue);if(Date.now()-x.time<60000)setStage(x.stage,x.detail)}catch(_){}}});
+</script>
+</body></html>

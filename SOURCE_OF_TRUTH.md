@@ -1,6 +1,6 @@
 # Pizzomania — Source of Truth
 
-**Canonical version:** V6 — Pizzomania Visual + Phase 1 AI + Live Agentic Flow
+**Canonical version:** V7 — Pizzomania Visual + Phase 1 AI + RAG + Live Agentic Flow + Admin
 
 ## Rule
 
@@ -37,7 +37,10 @@ Phase 1 AI and the live agentic flow are part of this canonical version:
 - server-side menu/pizza validation
 - Gemini tool calling with deterministic fallback
 - session-scoped demo order lookup
-- event-driven agentic flow visualization
+- event-driven agentic flow visualization on `/agent-flow`
+- Build My Pizza deterministic intent analysis when Gemini is unavailable
+- local RAG retrieval layer feeding the AI context
+- read-only `/admin` agent/process dashboard
 - one canonical backend order-status calculation
 
 ## Required guardrails
@@ -47,6 +50,7 @@ Phase 1 AI and the live agentic flow are part of this canonical version:
 - Order status is calculated once by the backend and consumed by both the tracker and AI.
 - Order lookup requires the current session to own the order.
 - Customer-facing pizza imagery is local; no Wikimedia dependency.
+- Gemini credentials are loaded from environment or `.env`; never commit `.env`.
 
 ## Verification
 
