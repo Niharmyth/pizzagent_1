@@ -120,6 +120,11 @@ PIZZAS = [
      "base_price": 15.90, "base_cal": 650, "tags": ["Healthy Choice"],
      "image": "/static/images/pizzas/bbq.webp",
      "rating": 4.7, "reviews": 264},
+    {"id": "s5", "category": "single", "name": "Inferno Spicy Chicken",
+     "description": "Chargrilled chicken, jalapenos, roasted capsicum, red onion and mozzarella with a smoky spicy base.",
+     "base_price": 16.90, "base_cal": 690, "tags": ["Spicy"],
+     "image": "/static/images/pizzas/inferno.webp",
+     "rating": 4.8, "reviews": 241},
     # ---------------- FAMILY ----------------
     {"id": "f1", "category": "family", "name": "Family Veggie Feast",
      "description": "A generous mix of roast vegetables and vegan cheese. Serves 4-6.",
@@ -366,28 +371,25 @@ def _normalise(s):
 
 
 def search_menu(query="", tags=None, max_price=None, max_cal=None):
-    """Search the authoritative PIZZAS catalog using deterministic filters."""
-    query_n = _normalise(query)
-    tags = [str(t).strip().lower() for t in (tags or []) if str(t).strip()]
-    results = []
+    """Search the authoritative menu with semantic pizza-intent matching."""
+    query_n=_normalise(query); tags=[str(t).strip().lower() for t in (tags or []) if str(t).strip()]
+    synonyms={"spicy":["spicy","jalapeno","jalapenos","hot","inferno"],"hot":["spicy","jalapeno","jalapenos","hot","inferno"],"cheesy":["cheese","mozzarella"],"cheese":["cheese","mozzarella"],"loaded":["loaded","supreme","bbq"],"healthy":["healthy","light","lean"],"veggie":["veggie","vegetarian","vegan","vegetable"],"vegetarian":["vegetarian"],"vegan":["vegan"],"kids":["kids"],"family":["family"]}
+    tokens=query_n.split(); results=[]
     for p in PIZZAS:
-        hay = _normalise(p["name"] + " " + p["description"] + " " + " ".join(p["tags"]))
-        if query_n and not all(token in hay for token in query_n.split()):
-            continue
-        tag_hay = {t.lower() for t in p["tags"]}
-        if tags and not all(t in tag_hay for t in tags):
-            continue
-        if max_price is not None and p["base_price"] > float(max_price):
-            continue
-        if max_cal is not None and p["base_cal"] > int(max_cal):
-            continue
-        results.append({
-            "id": p["id"], "category": p["category"], "name": p["name"], "description": p["description"],
-            "base_price": p["base_price"], "base_cal": p["base_cal"],
-            "tags": p["tags"], "image": p["image"], "rating": p.get("rating"), "reviews": p.get("reviews")
-        })
-    results.sort(key=lambda x: (-float(x.get("rating") or 0), x["base_price"]))
-    return {"matches": results[:8], "count": len(results)}
+        hay=_normalise(p["name"]+" "+p["description"]+" "+" ".join(p["tags"])); tag_hay={t.lower() for t in p["tags"]}
+        if tags and not all(t in tag_hay for t in tags): continue
+        if max_price is not None and p["base_price"]>float(max_price): continue
+        if max_cal is not None and p["base_cal"]>int(max_cal): continue
+        score=0.0
+        for token in tokens:
+            if token in hay: score+=4.0
+            elif any(term in hay for term in synonyms.get(token, [])): score+=3.0
+        if tokens and score<=0: continue
+        score+=float(p.get("rating") or 0)*0.15
+        results.append({"id":p["id"],"category":p["category"],"name":p["name"],"description":p["description"],"base_price":p["base_price"],"base_cal":p["base_cal"],"tags":p["tags"],"image":p["image"],"rating":p.get("rating"),"reviews":p.get("reviews"),"_score":score})
+    results.sort(key=lambda x:(-x["_score"],-float(x.get("rating") or 0),x["base_price"]))
+    for item in results: item.pop("_score",None)
+    return {"matches":results[:8],"count":len(results)}
 
 
 def build_pizza(pizza_id, size=None, crust=None, toppings=None, qty=1):
@@ -662,7 +664,7 @@ def _gemini_agent(message, history, context, interaction_id=None):
         "configuration, delivery and order facts. Never invent products, toppings, "
         "prices, calories, delivery eligibility or order status. Do not reveal hidden "
         "reasoning or chain-of-thought. Return friendly concise answers. "
-        "When a user wants a pizza, use search_menu then build_pizza to validate a "
+        "When a user wants a pizza, use search_menu first. If search_menu returns zero matches, do NOT call build_pizza. Only call build_pizza using a pizza_id returned by the latest search_menu call. Never invent a pizza_id or repeatedly build unrelated/default pizzas. "
         "concrete suggestion. A pizza proposal is only a suggestion until the user "
         "approves it. Use retrieved knowledge only as supporting context; authoritative "
         "menu/pricing/order facts come from tools. After you receive a successful "
@@ -677,6 +679,7 @@ def _gemini_agent(message, history, context, interaction_id=None):
     trace = []
     suggestions = []
     last_built = None
+    candidate_ids = set()
 
     def create_turn(input_value, previous_id=None, tools=None, prompt_system=system):
         kwargs = {
@@ -726,11 +729,15 @@ def _gemini_agent(message, history, context, interaction_id=None):
             fn = _agent_tools().get(name)
             if not fn:
                 result = {"ok": False, "error": "Unknown tool."}
+            elif name == "build_pizza" and str(args.get("pizza_id")) not in candidate_ids:
+                result = {"ok": False, "error": "That pizza was not returned by the latest menu search. Call search_menu first and use a returned pizza_id."}
             else:
                 try:
                     result = fn(**dict(args))
                 except Exception as exc:
                     result = {"ok": False, "error": str(exc)}
+            if name == "search_menu":
+                candidate_ids = {str(item["id"]) for item in result.get("matches", [])}
 
             trace.append({
                 "label": {
