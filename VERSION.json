@@ -1,9 +1,9 @@
 {
-  "version": "11.0.0",
-  "codename": "Pizzomania AI Menu Matching & Tool Grounding",
-  "baseline": "V9 responsive AI + Gemini Interactions API + semantic menu matching",
-  "status": "canonical",
-  "source_of_truth": "main",
-  "source_commit": "34a25f0b28148539b7fe1c3128e8104eb73ac6fa",
-  "notes": "V11 adds semantic menu matching, Inferno Spicy Chicken, deterministic matching improvements, and server-side candidate-ID enforcement for build_pizza."
+  "version": "12.0.0",
+  "codename": "Pizzomania AI Trust & Observability",
+  "baseline": "V11 AI menu matching and tool grounding",
+  "status": "release-candidate",
+  "source_of_truth": "v12-ai-trust-observability",
+  "baseline_commit": "45216f9c866d81353105479dbffb5430f25f48e6",
+  "notes": "V12 adds RAG evaluation metrics, an Admin trust/observability dashboard, tamper-evident order evidence primitives, and Gemini 3.5 Flash-Lite configuration via GEMINI_MODEL."
 }
