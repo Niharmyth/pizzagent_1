@@ -33,12 +33,14 @@ except Exception:
     pass
 
 from rag import retrieve_context, rag_status
+from v12_runtime import gemini_model, new_evidence_chain, record_evidence, evidence_status
+from menu_catalog import MENU_EXTRAS, MENU_BUNDLES, MENU_CATEGORIES, menu_search
 
 # ============================================================
 # HAND-EDITABLE CONSTANTS
 # ============================================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_MODEL = gemini_model()
 GEMINI_INIT_ERROR = None
 AGENT_NAME = "Pizzomania"
 PORT = 8083
@@ -217,6 +219,7 @@ DEALS = [
 
 # Demo-only server-side order registry. Replace with a database for production.
 ORDERS_BY_NUMBER = {}
+ORDER_EVIDENCE_BY_NUMBER = {}
 AGENT_EVENTS = []
 
 def record_agent_event(agent, event, detail, tool=None):
@@ -868,10 +871,42 @@ def index():
 def api_menu():
     return jsonify({
         "pizzas": PIZZAS,
+        "extras": MENU_EXTRAS,
+        "bundles": MENU_BUNDLES,
+        "categories": MENU_CATEGORIES,
         "allowed_sizes": ALLOWED_SIZES,
         "crusts": CRUSTS,
         "toppings": TOPPINGS,
         "size_price_step": SIZE_PRICE_STEP,
+    })
+
+
+@app.route("/api/menu/search")
+def api_menu_search():
+    query = (request.args.get("query") or "").strip()
+    category = (request.args.get("category") or "all").strip().lower()
+    max_price_raw = request.args.get("max_price")
+    dietary_raw = request.args.get("dietary") or ""
+
+    max_price = None
+    if max_price_raw:
+        try:
+            max_price = float(max_price_raw)
+        except ValueError:
+            return jsonify({"ok": False, "error": "max_price must be numeric"}), 400
+
+    dietary = [x.strip() for x in dietary_raw.split(",") if x.strip()]
+
+    return jsonify({
+        "ok": True,
+        "query": query,
+        "category": category,
+        "results": menu_search(
+            query=query,
+            category=category,
+            max_price=max_price,
+            dietary=dietary,
+        ),
     })
 
 
@@ -969,11 +1004,67 @@ def api_order_status():
     order_number = request.args.get("order_number", "").strip().upper()
     if not order_number:
         order_number = session.get("last_order_number", "")
+
     order, error = get_order_for_session(order_number)
     if error:
         return jsonify(error), 404
+
     status = _order_status(order)
-    return jsonify({"ok": True, "order": order, "status": status})
+    stage_key = status["stage_key"]
+
+    chain = ORDER_EVIDENCE_BY_NUMBER.get(order_number, [])
+
+    status_events = {
+        "prep": ("kitchen_preparation", "kitchen"),
+        "bake": ("kitchen_preparation", "kitchen"),
+        "quality": ("quality_check", "quality-control"),
+        "out": (
+            "dispatch",
+            "pickup-agent" if order.get("fulfilment") == "pickup" else "delivery-agent",
+        ),
+        "done": (
+            "order_completed"
+            if order.get("fulfilment") == "pickup"
+            else "delivery_completed",
+            "pickup-agent"
+            if order.get("fulfilment") == "pickup"
+            else "delivery-agent",
+        ),
+    }
+
+    event_info = status_events.get(stage_key)
+
+    if event_info:
+        event_type, actor = event_info
+
+        if not any(event.get("type") == event_type for event in chain):
+            record_evidence(
+                chain,
+                event_type,
+                {
+                    "order_number": order_number,
+                    "stage_key": stage_key,
+                    "status": status["status"],
+                },
+                actor=actor,
+            )
+
+    return jsonify({
+        "ok": True,
+        "order": order,
+        "status": status,
+        "evidence": evidence_status(chain),
+    })
+
+
+@app.route("/api/order/evidence", methods=["GET"])
+def api_order_evidence():
+    order_number = request.args.get("order_number", "").strip().upper() or session.get("last_order_number", "")
+    order, error = get_order_for_session(order_number)
+    if error:
+        return jsonify(error), 404
+    chain = ORDER_EVIDENCE_BY_NUMBER.get(order_number, [])
+    return jsonify({"ok": True, "order_number": order_number, "events": chain, "integrity": evidence_status(chain)})
 
 
 @app.route("/api/order/process", methods=["POST"])
@@ -1063,6 +1154,11 @@ def api_order_process():
                 "owner_id": _ensure_order_owner(),
             }
             ORDERS_BY_NUMBER[order["order_number"]] = order
+            evidence_chain = new_evidence_chain()
+            record_evidence(evidence_chain, "customer_request", {"order_number": order["order_number"], "items": cart_summary}, actor="customer")
+            record_evidence(evidence_chain, "server_validation", {"order_number": order["order_number"], "items": order["items"], "total": total}, actor="server")
+            record_evidence(evidence_chain, "order_created", {"order_number": order["order_number"], "store": store["name"], "fulfilment": fulfilment}, actor="order-agent")
+            ORDER_EVIDENCE_BY_NUMBER[order["order_number"]] = evidence_chain
             record_agent_event("Kitchen", "Order created", f"{order['order_number']} routed to {store['name']}.")
             session["last_order_number"] = order["order_number"]
             session["cart"] = []  # order placed, clear the cart
