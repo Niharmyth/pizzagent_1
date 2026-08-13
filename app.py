@@ -790,14 +790,13 @@ def _interaction_steps(interaction):
 
 
 def _gemini_agent(message, history, context, interaction_id=None):
-    """Run Pizzomania AI through Interactions API with bounded, fail-safe tool use.
-
-    Important: interaction-scoped settings (system instruction/tools) are supplied on
-    every turn. Once a validated pizza exists, the final turn is deliberately run
-    without custom tools so the model cannot keep calling build_pizza indefinitely.
-    """
+    """Run Pizzomania AI through Interactions API with bounded, fail-safe tool use."""
     rag = retrieve_context(message, top_k=4)
-    record_agent_event("Pizza AI", "RAG retrieval", f"Retrieved {len(rag['chunks'])} knowledge chunks.")
+    record_agent_event(
+        "Pizza AI",
+        "RAG retrieval",
+        f"Retrieved {len(rag['chunks'])} knowledge chunks.",
+    )
 
     system = (
         "You are Pizzomania AI, a concise pizza ordering co-pilot. Help the user build "
@@ -805,8 +804,10 @@ def _gemini_agent(message, history, context, interaction_id=None):
         "configuration, delivery and order facts. Never invent products, toppings, "
         "prices, calories, delivery eligibility or order status. Do not reveal hidden "
         "reasoning or chain-of-thought. Return friendly concise answers. "
-        "When a user wants a pizza, use search_menu first. If search_menu returns zero matches, do NOT call build_pizza. Only call build_pizza using a pizza_id returned by the latest search_menu call. Never invent a pizza_id or repeatedly build unrelated/default pizzas. "
-        "concrete suggestion. A pizza proposal is only a suggestion until the user "
+        "When a user wants a pizza, use search_menu first. If search_menu returns zero "
+        "matches, do NOT call build_pizza. Only call build_pizza using a pizza_id returned "
+        "by the latest search_menu call. Never invent a pizza_id or repeatedly build "
+        "unrelated/default pizzas. A pizza proposal is only a suggestion until the user "
         "approves it. Use retrieved knowledge only as supporting context; authoritative "
         "menu/pricing/order facts come from tools. After you receive a successful "
         "build_pizza result, stop calling tools and provide the user with a concise "
@@ -835,23 +836,67 @@ def _gemini_agent(message, history, context, interaction_id=None):
             kwargs["tools"] = tools
         return _genai_client.interactions.create(**kwargs)
 
-    if interaction_id:
-        interaction = create_turn(message, previous_id=interaction_id, tools=tool_declarations)
+    # Follow-ups modify the existing proposal instead of starting a new search.
+    last_proposal = (context or {}).get("lastProposal") or {}
+
+    if interaction_id and last_proposal.get("id"):
+        pizza_id = str(last_proposal["id"])
+        candidate_ids.add(pizza_id)
+
+        followup_system = system + (
+            "\n\nFOLLOW-UP MODE: The user is modifying the previously validated pizza. "
+            f"The current pizza_id is {pizza_id}. "
+            f"The current pizza is {last_proposal.get('name', 'the previous pizza')}, "
+            f"size {last_proposal.get('size', 'current size')}, "
+            f"crust {last_proposal.get('crust', 'current crust')}, "
+            f"with toppings {last_proposal.get('toppings', [])}. "
+            "Do not call search_menu. Modify this existing pizza using build_pizza only. "
+            "Preserve the existing size, crust, quantity and toppings unless the user "
+            "explicitly changes them. Add requested toppings rather than replacing "
+            "existing toppings."
+        )
+
+        followup_tools = [
+            d for d in tool_declarations
+            if d.get("name") == "build_pizza"
+        ]
+
+        interaction = create_turn(
+            message,
+            previous_id=interaction_id,
+            tools=followup_tools,
+            prompt_system=followup_system,
+        )
+
+    elif interaction_id:
+        interaction = create_turn(
+            message,
+            previous_id=interaction_id,
+            tools=tool_declarations,
+        )
+
     else:
         history_text = ""
         if history:
             compact = history[-8:]
             history_text = "\nCONVERSATION SO FAR:\n" + "\n".join(
-                f"{t.get('role','user').upper()}: {t.get('content','')}" for t in compact
+                f"{t.get('role', 'user').upper()}: {t.get('content', '')}"
+                for t in compact
             )
+
         prompt = f"{history_text}\n\nUSER:\n{message}".strip()
-        interaction = create_turn(prompt, tools=tool_declarations)
+        interaction = create_turn(
+            prompt,
+            tools=tool_declarations,
+        )
 
     for round_no in range(AGENT_MAX_ROUNDS):
         calls = [
-            step for step in _interaction_steps(interaction)
+            step
+            for step in _interaction_steps(interaction)
             if getattr(step, "type", None) == "function_call"
         ]
+
         if not calls:
             text = _interaction_text(interaction)
             if last_built and not suggestions:
@@ -864,21 +909,36 @@ def _gemini_agent(message, history, context, interaction_id=None):
             }
 
         function_results = []
+
         for call in calls:
             name = getattr(call, "name", "")
             args = getattr(call, "arguments", {}) or {}
             fn = _agent_tools().get(name)
+
             if not fn:
                 result = {"ok": False, "error": "Unknown tool."}
-            elif name == "build_pizza" and str(args.get("pizza_id")) not in candidate_ids:
-                result = {"ok": False, "error": "That pizza was not returned by the latest menu search. Call search_menu first and use a returned pizza_id."}
+            elif (
+                name == "build_pizza"
+                and str(args.get("pizza_id")) not in candidate_ids
+            ):
+                result = {
+                    "ok": False,
+                    "error": (
+                        "That pizza was not returned by the latest menu search. "
+                        "Call search_menu first and use a returned pizza_id."
+                    ),
+                }
             else:
                 try:
                     result = fn(**dict(args))
                 except Exception as exc:
                     result = {"ok": False, "error": str(exc)}
+
             if name == "search_menu":
-                candidate_ids = {str(item["id"]) for item in result.get("matches", [])}
+                candidate_ids = {
+                    str(item["id"])
+                    for item in result.get("matches", [])
+                }
 
             trace.append({
                 "label": {
@@ -889,6 +949,7 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 }.get(name, "Checking"),
                 "tool": name,
             })
+
             record_agent_event(
                 {
                     "search_menu": "Menu Agent",
@@ -900,6 +961,7 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 f"{name} executed.",
                 name,
             )
+
             if name == "build_pizza" and result.get("ok"):
                 last_built = result["pizza"]
                 suggestions.append(last_built)
@@ -908,13 +970,21 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 "type": "function_result",
                 "name": name,
                 "call_id": getattr(call, "id", None),
-                "result": [{"type": "text", "text": json.dumps(result)}],
+                "result": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(result),
+                    }
+                ],
             })
 
-        # If a pizza was successfully validated, ask for a final natural-language
-        # answer without tools. This removes the main source of long/looping calls.
         if last_built:
-            final_system = system + "\nA validated pizza is already available. Do not call any tools. Summarize the pizza and invite the user to customize or add it to cart."
+            final_system = (
+                system
+                + "\nA validated pizza is already available. Do not call any tools. "
+                "Summarize the updated pizza and invite the user to customize it "
+                "further or add it to cart."
+            )
             interaction = create_turn(
                 function_results,
                 previous_id=getattr(interaction, "id", None),
@@ -928,17 +998,24 @@ def _gemini_agent(message, history, context, interaction_id=None):
                 tools=tool_declarations,
             )
 
-    # Never show the user a dead-end error when we already have a valid pizza.
     if last_built:
         p = last_built
         return {
-            "reply": f"I found a match: **{p['name']}** at **${p['total_price']:.2f}**. You can review and customize it below before adding it to your cart.",
+            "reply": (
+                f"I found a match: **{p['name']}** at "
+                f"**${p['total_price']:.2f}**. You can review and customize it "
+                "below before adding it to your cart."
+            ),
             "suggestions": [last_built],
             "trace": trace,
             "interaction_id": getattr(interaction, "id", None),
         }
+
     return {
-        "reply": "I couldn't complete that request quickly enough. Try a shorter request such as ‘spicy under $18’ and I'll build it for you.",
+        "reply": (
+            "I couldn't complete that request quickly enough. Try a shorter "
+            "request such as ‘spicy under $18’ and I'll build it for you."
+        ),
         "suggestions": [],
         "trace": trace,
         "interaction_id": getattr(interaction, "id", None),
