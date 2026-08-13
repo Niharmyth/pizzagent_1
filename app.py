@@ -374,25 +374,163 @@ def _normalise(s):
 
 
 def search_menu(query="", tags=None, max_price=None, max_cal=None):
-    """Search the authoritative menu with semantic pizza-intent matching."""
-    query_n=_normalise(query); tags=[str(t).strip().lower() for t in (tags or []) if str(t).strip()]
-    synonyms={"spicy":["spicy","jalapeno","jalapenos","hot","inferno"],"hot":["spicy","jalapeno","jalapenos","hot","inferno"],"cheesy":["cheese","mozzarella"],"cheese":["cheese","mozzarella"],"loaded":["loaded","supreme","bbq"],"healthy":["healthy","light","lean"],"veggie":["veggie","vegetarian","vegan","vegetable"],"vegetarian":["vegetarian"],"vegan":["vegan"],"kids":["kids"],"family":["family"]}
-    tokens=query_n.split(); results=[]
+    """Search the authoritative Pizzomania catalog across pizzas and non-pizza items."""
+    query_n = _normalise(query)
+    tags = [str(t).strip().lower() for t in (tags or []) if str(t).strip()]
+    tokens = query_n.split()
+    results = []
+
+    synonyms = {
+        "spicy": ["spicy", "jalapeno", "jalapenos", "hot", "inferno", "chili", "fiery"],
+        "hot": ["spicy", "jalapeno", "jalapenos", "hot", "inferno", "chili", "fiery"],
+        "cheesy": ["cheese", "mozzarella"],
+        "cheese": ["cheese", "mozzarella"],
+        "loaded": ["loaded", "supreme", "bbq"],
+        "healthy": ["healthy", "light", "lean"],
+        "veggie": ["veggie", "vegetarian", "vegan", "vegetable"],
+        "vegetarian": ["vegetarian"],
+        "vegan": ["vegan"],
+        "kids": ["kids"],
+        "family": ["family"],
+    }
+
+    # ------------------------------------------------------------
+    # PIZZAS — preserve the existing authoritative behavior
+    # ------------------------------------------------------------
     for p in PIZZAS:
-        hay=_normalise(p["name"]+" "+p["description"]+" "+" ".join(p["tags"])); tag_hay={t.lower() for t in p["tags"]}
-        if tags and not all(t in tag_hay for t in tags): continue
-        if max_price is not None and p["base_price"]>float(max_price): continue
-        if max_cal is not None and p["base_cal"]>int(max_cal): continue
-        score=0.0
+        hay = _normalise(
+            p["name"] + " " + p["description"] + " " + " ".join(p["tags"])
+        )
+        tag_hay = {t.lower() for t in p["tags"]}
+
+        if tags and not all(t in tag_hay for t in tags):
+            continue
+        if max_price is not None and p["base_price"] > float(max_price):
+            continue
+        if max_cal is not None and p["base_cal"] > int(max_cal):
+            continue
+
+        score = 0.0
+
         for token in tokens:
-            if token in hay: score+=4.0
-            elif any(term in hay for term in synonyms.get(token, [])): score+=3.0
-        if tokens and score<=0: continue
-        score+=float(p.get("rating") or 0)*0.15
-        results.append({"id":p["id"],"category":p["category"],"name":p["name"],"description":p["description"],"base_price":p["base_price"],"base_cal":p["base_cal"],"tags":p["tags"],"image":p["image"],"rating":p.get("rating"),"reviews":p.get("reviews"),"_score":score})
-    results.sort(key=lambda x:(-x["_score"],-float(x.get("rating") or 0),x["base_price"]))
-    for item in results: item.pop("_score",None)
-    return {"matches":results[:8],"count":len(results)}
+            if token in hay:
+                score += 4.0
+            elif any(term in hay for term in synonyms.get(token, [])):
+                score += 3.0
+
+        if tokens and score <= 0:
+            continue
+
+        score += float(p.get("rating") or 0) * 0.15
+
+        results.append({
+            "id": p["id"],
+            "item_type": "pizza",
+            "category": p["category"],
+            "name": p["name"],
+            "description": p["description"],
+            "base_price": p["base_price"],
+            "base_cal": p["base_cal"],
+            "price": p["base_price"],
+            "calories": p["base_cal"],
+            "tags": p["tags"],
+            "dietary": p.get("dietary", []),
+            "image": p["image"],
+            "rating": p.get("rating"),
+            "reviews": p.get("reviews"),
+            "_score": score,
+        })
+
+    # ------------------------------------------------------------
+    # NON-PIZZA — delegate to the authoritative V12 catalog
+    # ------------------------------------------------------------
+    category = "all"
+
+    if any(t in tokens for t in ("drink", "drinks")):
+        category = "drinks"
+    elif any(t in tokens for t in ("snack", "snacks", "side", "sides")):
+        category = "sides"
+    elif any(t in tokens for t in ("dip", "dips")):
+        category = "dips"
+    elif any(t in tokens for t in ("dessert", "desserts", "sweet")):
+        category = "desserts"
+
+    dietary = []
+
+    if "vegan" in tokens:
+        dietary.append("vegan")
+    elif "vegetarian" in tokens or "veggie" in tokens:
+        dietary.append("vegetarian")
+
+    # Remove category words from the search phrase so the catalog
+    # search focuses on the actual product intent.
+    catalog_tokens = [
+        t for t in tokens
+        if t not in {
+            "drink", "drinks",
+            "snack", "snacks",
+            "side", "sides",
+            "dip", "dips",
+            "dessert", "desserts",
+            "sweet",
+            "vegan", "vegetarian", "veggie",
+        }
+    ]
+
+    catalog_query = " ".join(catalog_tokens)
+
+    # Preserve useful semantic synonyms for the catalog search.
+    if "spicy" in catalog_tokens or "hot" in catalog_tokens:
+        catalog_query += " spicy"
+    if "cheesy" in catalog_tokens or "cheese" in catalog_tokens:
+        catalog_query += " cheese"
+    if "loaded" in catalog_tokens:
+        catalog_query += " loaded"
+
+    extras = menu_search(
+        query=catalog_query.strip(),
+        category=category,
+        max_price=max_price,
+        dietary=dietary,
+    )
+
+    for item in extras:
+        results.append({
+            "id": item["id"],
+            "item_type": "menu_item",
+            "category": item["category"],
+            "name": item["name"],
+            "description": item["description"],
+            "price": item["price"],
+            "calories": item["calories"],
+            "tags": item.get("tags", []),
+            "dietary": item.get("dietary", []),
+            "image": item.get("image"),
+            "_score": 2.0,
+        })
+
+    # Explicit non-pizza intent should outrank unrelated pizza results.
+    if category != "all":
+        results = [
+            item for item in results
+            if item["item_type"] == "menu_item"
+        ]
+
+    results.sort(
+        key=lambda x: (
+            -x["_score"],
+            -float(x.get("rating") or 0),
+            float(x.get("price") or x.get("base_price") or 0),
+        )
+    )
+
+    for item in results:
+        item.pop("_score", None)
+
+    return {
+        "matches": results[:8],
+        "count": len(results),
+    }
 
 
 def build_pizza(pizza_id, size=None, crust=None, toppings=None, qty=1):
